@@ -1,0 +1,11 @@
+# JEE Workstation
+
+> A focus timer and consistency tracker built for JEE aspirants — tracks five curriculum subjects, logs deep-work sessions, and surfaces a daily consistency quotient.
+
+## Pages
+
+- [Dashboard](/): Countdown to JEE, consistency quotient, and 28-day focus history.
+- [Focus](/focus): Deep focus timer with ambient audio and urge surfer.
+- [Tracks](/tracks): Curriculum tracks and chapter progress for Physics, Chemistry, and Math.
+- [Override Matrix](/matrix): Administrative view to manually set chapter completion.
+- [Manual Log](/log): Record study blocks completed offline.

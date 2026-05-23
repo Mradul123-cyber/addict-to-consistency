@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://addict-to-consistency.lovable.app/sitemap.xml
