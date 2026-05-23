@@ -11,8 +11,12 @@ export const Route = createFileRoute("/matrix")({
   head: () => ({
     meta: [
       { title: "Override Matrix — JEE Workstation" },
-      { name: "description", content: "Administrative view to override chapter progress directly." },
+      { name: "description", content: "Administrative grid for manually overriding chapter completion percentages across every JEE subject in one place." },
+      { property: "og:title", content: "Global Override Matrix" },
+      { property: "og:description", content: "Administrative grid for manually overriding chapter completion percentages across every JEE subject in one place." },
+      { property: "og:url", content: "https://addict-to-consistency.lovable.app/matrix" },
     ],
+    links: [{ rel: "canonical", href: "https://addict-to-consistency.lovable.app/matrix" }],
   }),
   component: MatrixPage,
 });

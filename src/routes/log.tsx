@@ -12,8 +12,12 @@ export const Route = createFileRoute("/log")({
   head: () => ({
     meta: [
       { title: "Manual Log — JEE Workstation" },
-      { name: "description", content: "Record study blocks completed offline." },
+      { name: "description", content: "Record offline JEE study blocks with chapter, minutes, and focus rating so they count toward your consistency quotient." },
+      { property: "og:title", content: "Log Offline JEE Study Blocks" },
+      { property: "og:description", content: "Record offline JEE study blocks with chapter, minutes, and focus rating so they count toward your consistency quotient." },
+      { property: "og:url", content: "https://addict-to-consistency.lovable.app/log" },
     ],
+    links: [{ rel: "canonical", href: "https://addict-to-consistency.lovable.app/log" }],
   }),
   component: LogPage,
 });
