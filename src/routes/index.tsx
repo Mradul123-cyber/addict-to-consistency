@@ -15,8 +15,12 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Dashboard — JEE Workstation" },
-      { name: "description", content: "Countdown, consistency quotient, and 28-day study history." },
+      { name: "description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
+      { property: "og:title", content: "JEE Workstation Dashboard" },
+      { property: "og:description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
+      { property: "og:url", content: "https://addict-to-consistency.lovable.app/" },
     ],
+    links: [{ rel: "canonical", href: "https://addict-to-consistency.lovable.app/" }],
   }),
   component: Dashboard,
 });
