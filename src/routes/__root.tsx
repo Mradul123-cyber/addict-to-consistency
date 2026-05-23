@@ -67,16 +67,34 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Matrix" },
-      { name: "description", content: "Focus timer and consistency tracker for JEE preparation." },
-      { property: "og:title", content: "Matrix" },
-      { name: "twitter:title", content: "Matrix" },
-      { property: "og:description", content: "Focus timer and consistency tracker for JEE preparation." },
-      { name: "twitter:description", content: "Focus timer and consistency tracker for JEE preparation." },
-      { name: "twitter:card", content: "summary" },
+      { title: "JEE Workstation" },
+      { name: "description", content: "Focus timer and consistency tracker for JEE preparation across Physics, Chemistry, and Math." },
+      { property: "og:site_name", content: "JEE Workstation" },
       { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "WebSite",
+              name: "JEE Workstation",
+              url: "https://addict-to-consistency.lovable.app",
+              description: "Focus timer and consistency tracker for JEE preparation.",
+            },
+            {
+              "@type": "Organization",
+              name: "JEE Workstation",
+              url: "https://addict-to-consistency.lovable.app",
+            },
+          ],
+        }),
+      },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
