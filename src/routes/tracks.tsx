@@ -4,11 +4,38 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+const TRACK_NAMES = [
+  "Physics",
+  "Physical Chemistry",
+  "Organic Chemistry",
+  "Inorganic Chemistry",
+  "Mathematics",
+];
+
 export const Route = createFileRoute("/tracks")({
   head: () => ({
     meta: [
-      { title: "Tracks — JEE Workstation" },
-      { name: "description", content: "Curriculum tracks and chapter progress for all 5 subjects." },
+      { title: "Curriculum Tracks — JEE Workstation" },
+      { name: "description", content: "High-yield chapter progress across Physics, Physical, Organic and Inorganic Chemistry, and Mathematics for the JEE syllabus." },
+      { property: "og:title", content: "JEE Curriculum Tracks" },
+      { property: "og:description", content: "High-yield chapter progress across Physics, Physical, Organic and Inorganic Chemistry, and Mathematics for the JEE syllabus." },
+      { property: "og:url", content: "https://addict-to-consistency.lovable.app/tracks" },
+    ],
+    links: [{ rel: "canonical", href: "https://addict-to-consistency.lovable.app/tracks" }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: "JEE Curriculum Tracks",
+          itemListElement: TRACK_NAMES.map((name, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            name,
+          })),
+        }),
+      },
     ],
   }),
   component: TracksPage,
