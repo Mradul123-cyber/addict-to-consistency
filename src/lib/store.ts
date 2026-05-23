@@ -1,5 +1,18 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useEffect } from "react";
 import { SEED_TRACKS } from "./seed";
+import { db, auth } from "./firebase";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  setDoc,
+  query,
+  orderBy,
+} from "firebase/firestore";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type Priority = "High" | "Medium";
 
@@ -27,66 +40,23 @@ export interface SessionLog {
   createdAt: number;
 }
 
-const TRACKS_KEY = "jee.tracks";
-const SESSIONS_KEY = "jee.sessions";
-
-const isBrowser = typeof window !== "undefined";
-
-function read<T>(key: string, fallback: T): T {
-  if (!isBrowser) return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function write<T>(key: string, value: T) {
-  if (!isBrowser) return;
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
 let tracks: Track[] = [];
 let sessions: SessionLog[] = [];
-let initialized = false;
 
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
 }
 
-function ensureInit() {
-  if (initialized || !isBrowser) return;
-  tracks = read<Track[]>(TRACKS_KEY, []);
-  if (!tracks || tracks.length === 0) {
-    tracks = JSON.parse(JSON.stringify(SEED_TRACKS));
-    write(TRACKS_KEY, tracks);
-  }
-  sessions = read<SessionLog[]>(SESSIONS_KEY, []);
-  initialized = true;
-}
-
-function snapshot() {
-  ensureInit();
-  return { tracks, sessions };
-}
-
-let cachedSnap: { tracks: Track[]; sessions: SessionLog[] } = { tracks: [], sessions: [] };
-let snapVersion = 0;
+let cachedSnap = { tracks: [] as Track[], sessions: [] as SessionLog[] };
 function getSnapshot() {
-  ensureInit();
   return cachedSnap;
 }
 function refreshSnap() {
   cachedSnap = { tracks, sessions };
-  snapVersion++;
 }
 
 function subscribe(cb: () => void) {
-  ensureInit();
-  refreshSnap();
   listeners.add(cb);
   return () => {
     listeners.delete(cb);
@@ -95,52 +65,158 @@ function subscribe(cb: () => void) {
 
 const serverSnap = { tracks: [] as Track[], sessions: [] as SessionLog[] };
 
+let currentSubscriptionUid: string | null = null;
+let unsubscribeSessions: (() => void) | null = null;
+let unsubscribeTracks: (() => void) | null = null;
+
+function syncSubscription(uid: string | null, onStoreChange: () => void) {
+  if (currentSubscriptionUid === uid) return;
+
+  // Cleanup old subscription
+  if (unsubscribeSessions) {
+    unsubscribeSessions();
+    unsubscribeSessions = null;
+  }
+  if (unsubscribeTracks) {
+    unsubscribeTracks();
+    unsubscribeTracks = null;
+  }
+
+  currentSubscriptionUid = uid;
+
+  if (!uid) {
+    tracks = [];
+    sessions = [];
+    refreshSnap();
+    onStoreChange();
+    return;
+  }
+
+  // Subscribe to sessions collection
+  const sessionsCol = collection(db, "users", uid, "sessions");
+  const q = query(sessionsCol, orderBy("createdAt", "asc"));
+  unsubscribeSessions = onSnapshot(
+    q,
+    (snapshot) => {
+      sessions = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          chapterId: data.chapterId,
+          dateISO: data.dateISO,
+          minutes: data.minutes,
+          focusRating: data.focusRating,
+          source: data.source,
+          createdAt: data.createdAt,
+        } as SessionLog;
+      });
+      refreshSnap();
+      onStoreChange();
+    },
+    (err) => {
+      console.error("Error listening to sessions:", err);
+    }
+  );
+
+  // Subscribe to tracks document
+  const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+  unsubscribeTracks = onSnapshot(
+    tracksDocRef,
+    async (snapshot) => {
+      if (!snapshot.exists()) {
+        try {
+          await setDoc(tracksDocRef, { tracks: SEED_TRACKS });
+        } catch (err) {
+          console.error("Error seeding tracks:", err);
+        }
+      } else {
+        tracks = snapshot.data().tracks || [];
+        refreshSnap();
+        onStoreChange();
+      }
+    },
+    (err) => {
+      console.error("Error listening to tracks:", err);
+    }
+  );
+}
+
 export function useStore() {
+  const { user } = useAuth();
+  const uid = user?.uid || null;
+
+  useEffect(() => {
+    syncSubscription(uid, emit);
+  }, [uid]);
+
   return useSyncExternalStore(subscribe, getSnapshot, () => serverSnap);
 }
 
 // Mutations
-export function setChapterCompletion(chapterId: string, completion: number) {
-  ensureInit();
-  const clamped = Math.max(0, Math.min(100, Math.round(completion)));
-  tracks = tracks.map((t) => ({
-    ...t,
-    chapters: t.chapters.map((c) =>
-      c.id === chapterId ? { ...c, completion: clamped } : c,
-    ),
-  }));
-  write(TRACKS_KEY, tracks);
-  refreshSnap();
-  emit();
+export async function setChapterCompletion(chapterId: string, completion: number) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const clamped = Math.max(0, Math.min(100, Math.round(completion)));
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) =>
+        c.id === chapterId ? { ...c, completion: clamped } : c
+      ),
+    }));
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error setting chapter completion:", err);
+  }
 }
 
-export function bumpChapterFromSession(chapterId: string, minutes: number, rating: number) {
-  ensureInit();
-  const chapter = tracks.flatMap((t) => t.chapters).find((c) => c.id === chapterId);
-  if (!chapter) return;
-  // weight by rating (3 = neutral)
-  const weight = 0.7 + (rating / 5) * 0.6;
-  const delta = (minutes / 30) * weight; // ~1% per 30min at rating 3
-  setChapterCompletion(chapterId, chapter.completion + delta);
+export async function bumpChapterFromSession(chapterId: string, minutes: number, rating: number) {
+  try {
+    const chapter = tracks.flatMap((t) => t.chapters).find((c) => c.id === chapterId);
+    if (!chapter) return;
+    // weight by rating (3 = neutral)
+    const weight = 0.7 + (rating / 5) * 0.6;
+    const delta = (minutes / 30) * weight; // ~1% per 30min at rating 3
+    await setChapterCompletion(chapterId, chapter.completion + delta);
+  } catch (err) {
+    console.error("Error bumping chapter from session:", err);
+  }
 }
 
-export function addSession(input: Omit<SessionLog, "id" | "createdAt">) {
-  ensureInit();
-  const log: SessionLog = {
-    ...input,
-    id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    createdAt: Date.now(),
-  };
-  sessions = [...sessions, log];
-  write(SESSIONS_KEY, sessions);
-  if (log.chapterId) {
-    bumpChapterFromSession(log.chapterId, log.minutes, log.focusRating ?? 3);
-  } else {
-    refreshSnap();
-    emit();
+export async function addSession(input: Omit<SessionLog, "id" | "createdAt">) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const log = {
+      ...input,
+      createdAt: Date.now(),
+    };
+
+    await addDoc(collection(db, "users", uid, "sessions"), log);
+
+    if (log.chapterId) {
+      await bumpChapterFromSession(log.chapterId, log.minutes, log.focusRating ?? 3);
+    }
+  } catch (err) {
+    console.error("Error adding session:", err);
+  }
+}
+
+export async function deleteSession(id: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    await deleteDoc(doc(db, "users", uid, "sessions", id));
+  } catch (err) {
+    console.error("Error deleting session:", err);
   }
 }
 
 export function getSnapshotSync() {
-  return snapshot();
+  return { tracks, sessions };
 }

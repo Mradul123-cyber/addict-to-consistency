@@ -14,6 +14,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as MatrixRouteImport } from './routes/matrix'
 import { Route as LogRouteImport } from './routes/log'
 import { Route as FocusRouteImport } from './routes/focus'
+import { Route as AirgapRouteImport } from './routes/airgap'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TracksRoute = TracksRouteImport.update({
@@ -41,6 +42,11 @@ const FocusRoute = FocusRouteImport.update({
   path: '/focus',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AirgapRoute = AirgapRouteImport.update({
+  id: '/airgap',
+  path: '/airgap',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -49,6 +55,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/airgap': typeof AirgapRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/airgap': typeof AirgapRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
@@ -66,6 +74,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/airgap': typeof AirgapRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
@@ -74,12 +83,27 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/focus' | '/log' | '/matrix' | '/sitemap.xml' | '/tracks'
+  fullPaths:
+    | '/'
+    | '/airgap'
+    | '/focus'
+    | '/log'
+    | '/matrix'
+    | '/sitemap.xml'
+    | '/tracks'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/focus' | '/log' | '/matrix' | '/sitemap.xml' | '/tracks'
+  to:
+    | '/'
+    | '/airgap'
+    | '/focus'
+    | '/log'
+    | '/matrix'
+    | '/sitemap.xml'
+    | '/tracks'
   id:
     | '__root__'
     | '/'
+    | '/airgap'
     | '/focus'
     | '/log'
     | '/matrix'
@@ -89,6 +113,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AirgapRoute: typeof AirgapRoute
   FocusRoute: typeof FocusRoute
   LogRoute: typeof LogRoute
   MatrixRoute: typeof MatrixRoute
@@ -133,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FocusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/airgap': {
+      id: '/airgap'
+      path: '/airgap'
+      fullPath: '/airgap'
+      preLoaderRoute: typeof AirgapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -145,6 +177,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AirgapRoute: AirgapRoute,
   FocusRoute: FocusRoute,
   LogRoute: LogRoute,
   MatrixRoute: MatrixRoute,
@@ -154,3 +187,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

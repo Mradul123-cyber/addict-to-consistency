@@ -10,6 +10,8 @@ import {
 
 import appCss from "../styles.css?url";
 import { AppNav } from "@/components/AppNav";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthGate } from "@/components/AuthGate";
 
 function NotFoundComponent() {
   return (
@@ -121,12 +123,16 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-background text-foreground">
-        <AppNav />
-        <main className="mx-auto max-w-6xl px-4 py-8">
-          <Outlet />
-        </main>
-      </div>
+      <AuthProvider>
+        <AuthGate>
+          <div className="min-h-screen bg-background text-foreground">
+            <AppNav />
+            <main className="mx-auto max-w-6xl px-4 py-8">
+              <Outlet />
+            </main>
+          </div>
+        </AuthGate>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

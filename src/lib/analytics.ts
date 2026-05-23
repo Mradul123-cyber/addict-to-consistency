@@ -51,3 +51,41 @@ export function todayMinutes(sessions: SessionLog[], now = new Date()): number {
   const key = isoDay(now);
   return minutesByDay(sessions)[key] ?? 0;
 }
+
+export function currentStreak(sessions: SessionLog[], now = new Date()): number {
+  const byDay = minutesByDay(sessions);
+  const todayKey = isoDay(now);
+  const todayMins = byDay[todayKey] ?? 0;
+
+  let streak = 0;
+  let startOffset = 0;
+
+  if (todayMins >= DAILY_THRESHOLD_MIN) {
+    startOffset = 0;
+  } else {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = isoDay(yesterday);
+    const yesterdayMins = byDay[yesterdayKey] ?? 0;
+
+    if (yesterdayMins >= DAILY_THRESHOLD_MIN) {
+      startOffset = 1;
+    } else {
+      return 0;
+    }
+  }
+
+  let offset = startOffset;
+  while (true) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - offset);
+    const key = isoDay(d);
+    if ((byDay[key] ?? 0) >= DAILY_THRESHOLD_MIN) {
+      streak++;
+      offset++;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}

@@ -5,6 +5,7 @@ import { AmbientAudioControl } from "./AmbientAudioControl";
 import { UrgeSurfer } from "./UrgeSurfer";
 import { SessionCommitDialog } from "./SessionCommitDialog";
 import { stopAmbient } from "@/lib/audio";
+import { useStore, Chapter } from "@/lib/store";
 
 const DURATIONS = [45, 60, 90, 120] as const;
 
@@ -15,8 +16,18 @@ function fmt(s: number) {
 }
 
 export function FocusTimer() {
+  const { tracks } = useStore();
   const [chapterId, setChapterId] = useState<string | null>(null);
   const [duration, setDuration] = useState<number>(45);
+
+  // Suggest the High-priority chapter with the lowest completion %
+  const suggestedChapter = tracks
+    .flatMap((t) => t.chapters.map((c) => ({ ...c, trackName: t.name })))
+    .filter((c) => c.priority === "High")
+    .reduce<(Chapter & { trackName: string }) | null>(
+      (lowest, cur) => (!lowest || cur.completion < lowest.completion ? cur : lowest),
+      null
+    );
   const [remaining, setRemaining] = useState<number>(45 * 60);
   const [running, setRunning] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
@@ -66,7 +77,6 @@ export function FocusTimer() {
   }, [running]);
 
   const start = () => {
-    if (!chapterId) return;
     setRemaining(duration * 60);
     setRunning(true);
   };
@@ -82,11 +92,26 @@ export function FocusTimer() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <label className="text-sm font-medium">Active chapter</label>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <label className="text-sm font-medium">Active chapter</label>
+          {suggestedChapter && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">Suggested:</span>
+              <button
+                type="button"
+                onClick={() => setChapterId(suggestedChapter.id)}
+                className="inline-flex items-center rounded-full bg-amber-500/10 dark:bg-amber-500/20 px-2.5 py-0.5 font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 dark:hover:bg-amber-500/30 cursor-pointer transition-colors border border-amber-500/20"
+                title={`Suggesting high priority chapter ${suggestedChapter.name} at ${suggestedChapter.completion}% completion`}
+              >
+                ★ {suggestedChapter.trackName} · {suggestedChapter.name} ({suggestedChapter.completion}%)
+              </button>
+            </div>
+          )}
+        </div>
         <ChapterPicker value={chapterId} onChange={setChapterId} />
         {!chapterId && (
           <p className="text-xs text-muted-foreground">
-            Select a chapter to unlock the focus timer.
+            No chapter selected — session won't be tagged.
           </p>
         )}
       </div>
@@ -113,11 +138,11 @@ export function FocusTimer() {
           {fmt(remaining)}
         </div>
         <div className="mt-2 text-xs text-muted-foreground">
-          {running ? "Deep focus in progress" : chapterId ? "Ready" : "Pick a chapter"}
+          {running ? "Deep focus in progress" : "Ready"}
         </div>
         <div className="mt-6 flex justify-center gap-2">
           {!running ? (
-            <Button onClick={start} disabled={!chapterId}>
+            <Button onClick={start}>
               Start focus
             </Button>
           ) : (

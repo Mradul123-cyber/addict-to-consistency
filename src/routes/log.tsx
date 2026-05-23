@@ -1,12 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { addSession, useStore } from "@/lib/store";
+import { addSession, deleteSession, useStore } from "@/lib/store";
 import { isoDay } from "@/lib/analytics";
 import { ChapterPicker } from "@/components/ChapterPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/log")({
   head: () => ({
@@ -28,6 +39,7 @@ function LogPage() {
   const [date, setDate] = useState(isoDay(new Date()));
   const [minutes, setMinutes] = useState(60);
   const [rating, setRating] = useState<number>(3);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 
   const chapterName = (id: string | null) => {
     if (!id) return "—";
@@ -126,13 +138,53 @@ function LogPage() {
                       {s.focusRating ? ` · ★${s.focusRating}` : ""}
                     </div>
                   </div>
-                  <div className="tabular-nums text-muted-foreground">{s.minutes}m</div>
+                  <div className="flex items-center gap-3">
+                    <span className="tabular-nums text-muted-foreground">{s.minutes}m</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive cursor-pointer"
+                      onClick={() => setSessionToDelete(s.id)}
+                      title="Delete session"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={sessionToDelete !== null}
+        onOpenChange={(open) => !open && setSessionToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete focus session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This session will be permanently removed from your history and quotient calculation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (sessionToDelete) {
+                  deleteSession(sessionToDelete);
+                  setSessionToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
