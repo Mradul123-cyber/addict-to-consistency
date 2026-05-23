@@ -1,0 +1,134 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { addSession, useStore } from "@/lib/store";
+import { isoDay } from "@/lib/analytics";
+import { ChapterPicker } from "@/components/ChapterPicker";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+export const Route = createFileRoute("/log")({
+  head: () => ({
+    meta: [
+      { title: "Manual Log — JEE Workstation" },
+      { name: "description", content: "Record study blocks completed offline." },
+    ],
+  }),
+  component: LogPage,
+});
+
+function LogPage() {
+  const { sessions, tracks } = useStore();
+  const [chapterId, setChapterId] = useState<string | null>(null);
+  const [date, setDate] = useState(isoDay(new Date()));
+  const [minutes, setMinutes] = useState(60);
+  const [rating, setRating] = useState<number>(3);
+
+  const chapterName = (id: string | null) => {
+    if (!id) return "—";
+    for (const t of tracks) {
+      const c = t.chapters.find((x) => x.id === id);
+      if (c) return `${t.name} · ${c.name}`;
+    }
+    return "—";
+  };
+
+  const recent = [...sessions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (minutes <= 0) return;
+    addSession({
+      chapterId,
+      dateISO: date,
+      minutes,
+      focusRating: rating as 1 | 2 | 3 | 4 | 5,
+      source: "manual",
+    });
+    setMinutes(60);
+  };
+
+  return (
+    <div className="grid gap-6 md:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Log an offline block</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Chapter (optional)</Label>
+              <ChapterPicker value={chapterId} onChange={setChapterId} placeholder="No chapter" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="date">Date</Label>
+              <Input
+                id="date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="m">Minutes</Label>
+              <Input
+                id="m"
+                type="number"
+                min={1}
+                value={minutes}
+                onChange={(e) => setMinutes(Number(e.target.value))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Focus rating</Label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Button
+                    key={n}
+                    type="button"
+                    variant={rating === n ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRating(n)}
+                    className="w-12"
+                  >
+                    {n}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <Button type="submit" className="w-full">
+              Save block
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent sessions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No sessions yet.</p>
+          ) : (
+            <ul className="divide-y">
+              {recent.map((s) => (
+                <li key={s.id} className="flex items-center justify-between py-2 text-sm">
+                  <div>
+                    <div className="font-medium">{chapterName(s.chapterId)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {s.dateISO} · {s.source}
+                      {s.focusRating ? ` · ★${s.focusRating}` : ""}
+                    </div>
+                  </div>
+                  <div className="tabular-nums text-muted-foreground">{s.minutes}m</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
