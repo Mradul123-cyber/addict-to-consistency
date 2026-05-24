@@ -28,7 +28,6 @@ import {
 import { toast } from "sonner";
 import { Download, LogOut, Menu, Moon, Sun, User, X } from "lucide-react";
 import {
-  getDeferredPrompt,
   isInstalledPwa,
   subscribePwaInstall,
   triggerInstallPrompt,
