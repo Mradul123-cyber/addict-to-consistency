@@ -66,9 +66,23 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+const PWA_ASSET_PATTERNS = [
+  /^\/sw\.js$/,
+  /^\/workbox-[^/]+\.js$/,
+  /^\/registerSW\.js$/,
+  /^\/manifest\.webmanifest$/,
+];
+
+type AssetsEnv = { ASSETS?: { fetch: (request: Request) => Promise<Response> } };
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+      const assets = (env as AssetsEnv | undefined)?.ASSETS;
+      if (assets && PWA_ASSET_PATTERNS.some((re) => re.test(url.pathname))) {
+        return assets.fetch(request);
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
@@ -78,3 +92,4 @@ export default {
     }
   },
 };
+

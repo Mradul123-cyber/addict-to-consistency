@@ -17,10 +17,13 @@ export default defineConfig({
     plugins: [
       VitePWA({
         registerType: "autoUpdate",
-        devOptions: {
-          enabled: true,
-        },
+        strategies: "generateSW",
+        injectRegister: "auto",
         includeAssets: ["favicon.ico"],
+        workbox: {
+          navigateFallback: null,
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        },
         manifest: {
           name: "Matrix — JEE Console",
           short_name: "Matrix",
