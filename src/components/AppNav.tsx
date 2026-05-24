@@ -73,7 +73,7 @@ export function AppNav() {
   const { isDark, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [, setCanPrompt] = useState(false);
+  
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
 
   const iosInstallMessage =
