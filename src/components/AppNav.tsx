@@ -85,7 +85,6 @@ export function AppNav() {
   useEffect(() => {
     const sync = () => {
       setIsInstalled(isInstalledPwa());
-      setCanPrompt(getDeferredPrompt() !== null);
     };
     sync();
     return subscribePwaInstall(sync);
