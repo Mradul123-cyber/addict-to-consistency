@@ -4,7 +4,7 @@ import { FocusTimer } from "@/components/FocusTimer";
 export const Route = createFileRoute("/focus")({
   head: () => ({
     meta: [
-      { title: "Focus Timer — JEE Workstation" },
+      { title: "Focus Timer — JEE Console" },
       { name: "description", content: "Run a deep focus session with ambient audio, tab-drift alerts, and a built-in urge surfer to break distraction cravings." },
       { property: "og:title", content: "Deep Focus Timer for JEE Prep" },
       { property: "og:description", content: "Run a deep focus session with ambient audio, tab-drift alerts, and a built-in urge surfer to break distraction cravings." },

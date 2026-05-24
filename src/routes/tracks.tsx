@@ -15,7 +15,7 @@ const TRACK_NAMES = [
 export const Route = createFileRoute("/tracks")({
   head: () => ({
     meta: [
-      { title: "Curriculum Tracks — JEE Workstation" },
+      { title: "Curriculum Tracks — JEE Console" },
       { name: "description", content: "High-yield chapter progress across Physics, Physical, Organic and Inorganic Chemistry, and Mathematics for the JEE syllabus." },
       { property: "og:title", content: "JEE Curriculum Tracks" },
       { property: "og:description", content: "High-yield chapter progress across Physics, Physical, Organic and Inorganic Chemistry, and Mathematics for the JEE syllabus." },

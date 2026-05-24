@@ -5,7 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Lock, Mail, UserCheck, User } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, Lock, Mail, UserCheck, User, UserRound } from "lucide-react";
 
 const GoogleIcon = () => (
   <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -29,13 +39,16 @@ const GoogleIcon = () => (
 );
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsGuest } =
+    useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [guestConfirmOpen, setGuestConfirmOpen] = useState(false);
+  const [guestName, setGuestName] = useState("");
 
   if (loading) {
     return (
@@ -46,7 +59,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col items-center gap-4 text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground font-medium animate-pulse">
-            Initializing JEE Workstation...
+            Initializing JEE Console...
           </p>
         </div>
       </div>
@@ -104,6 +117,29 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const handleGuestSignIn = async () => {
+      if (!guestName.trim()) {
+        toast.error("Please enter your name.");
+        return;
+      }
+
+      setActionLoading(true);
+      try {
+        await signInAsGuest(guestName.trim());
+        setGuestConfirmOpen(false);
+        setGuestName("");
+        toast.success(`Welcome, ${guestName.trim()}!`);
+      } catch (err: any) {
+        console.error("Guest sign-in failed:", err);
+        const friendlyMessage = err.message
+          ? err.message.replace("Firebase: ", "")
+          : "Guest access is unavailable. Please try again or create an account.";
+        toast.error(friendlyMessage);
+      } finally {
+        setActionLoading(false);
+      }
+    };
+
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-background px-4 overflow-hidden">
         {/* Glow backdrop design */}
@@ -117,7 +153,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               <UserCheck className="h-6 w-6" />
             </div>
             <CardTitle className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
-              {isSignUp ? "Create Workspace" : "Workstation Lockscreen"}
+              {isSignUp ? "Create Workspace" : "Console Lockscreen"}
             </CardTitle>
             <CardDescription className="text-muted-foreground text-sm">
               {isSignUp
@@ -210,7 +246,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 ) : isSignUp ? (
                   "Create Account"
                 ) : (
-                  "Access Workstation"
+                  "Access Console"
                 )}
               </Button>
             </form>
@@ -233,6 +269,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               <GoogleIcon />
               Google Authentication
             </Button>
+
+            <Button
+              variant="ghost"
+              type="button"
+              className="w-full h-10 font-medium text-muted-foreground hover:text-foreground transition-all"
+              onClick={() => setGuestConfirmOpen(true)}
+              disabled={actionLoading}
+            >
+              <UserRound className="mr-2 h-4 w-4" />
+              Continue as Guest
+            </Button>
           </CardContent>
           <CardFooter className="flex justify-center border-t border-border/40 py-4 bg-accent/20 rounded-b-xl">
             <button
@@ -248,11 +295,78 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               disabled={actionLoading}
             >
               {isSignUp
-                ? "Already have a workstation key? Access locks"
+                ? "Already have a console key? Access locks"
                 : "Need access? Initialize a new user profile"}
             </button>
           </CardFooter>
         </Card>
+
+        <AlertDialog
+          open={guestConfirmOpen}
+          onOpenChange={(open) => {
+            if (!actionLoading) {
+              setGuestConfirmOpen(open);
+              if (!open) setGuestName("");
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Continue as Guest?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2 text-left">
+                <span className="block">
+                  You may explore JEE Console without creating an account. This is intended
+                  for evaluation and short-term use only.
+                </span>
+                <span className="block">
+                  Guest activity is tied to this browser session and is not linked to a registered
+                  profile. Your progress, session logs, and preferences will not be saved in the
+                  same way as a standard account and may be lost if you sign out, clear browser
+                  data, or switch devices.
+                </span>
+                <span className="block">
+                  To keep your data secure and accessible long term, create a full account at any
+                  time.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5 py-1">
+              <Label htmlFor="guestName">Your name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="guestName"
+                  type="text"
+                  placeholder="Enter your name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  className="pl-9 h-10"
+                  disabled={actionLoading}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={actionLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleGuestSignIn();
+                }}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Starting guest session...
+                  </>
+                ) : (
+                  "Continue as Guest"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }

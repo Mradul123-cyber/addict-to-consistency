@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Globe, Lock, Search, X } from "lucide-react";
+import { Globe, Heart, Lock, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { useAirgap } from "@/hooks/useAirgap";
+import { NEVER_HEALTHY, useAirgap } from "@/hooks/useAirgap";
 
 export const Route = createFileRoute("/airgap")({
   head: () => ({
     meta: [
-      { title: "Airgap Shield — JEE Workstation" },
+      { title: "Airgap Shield — JEE Console" },
       {
         name: "description",
         content:
@@ -56,15 +56,21 @@ function AirgapPage() {
     toggle,
     blocklist,
     keywords,
+    healthySites,
     addBlocklistEntry,
     removeBlocklistEntry,
+    addHealthySiteEntry,
+    removeHealthySiteEntry,
     addKeyword,
     removeKeyword,
   } = useAirgap();
 
   const [domainInput, setDomainInput] = useState("");
+  const [healthyInput, setHealthyInput] = useState("");
+  const [healthyInputError, setHealthyInputError] = useState<string | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
   const [isSavingDomain, setIsSavingDomain] = useState(false);
+  const [isSavingHealthy, setIsSavingHealthy] = useState(false);
   const [isSavingKeyword, setIsSavingKeyword] = useState(false);
   const [isOffDialogOpen, setIsOffDialogOpen] = useState(false);
   const [offReason, setOffReason] = useState<OffReason | "">("");
@@ -101,6 +107,23 @@ function AirgapPage() {
 
     setDomainInput("");
     setIsSavingDomain(false);
+  };
+
+  const handleAddHealthySite = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setHealthyInputError(null);
+    setIsSavingHealthy(true);
+
+    const result = await addHealthySiteEntry(healthyInput);
+    if (!result.ok) {
+      setHealthyInputError(result.error);
+      toast.error(result.error);
+      setIsSavingHealthy(false);
+      return;
+    }
+
+    setHealthyInput("");
+    setIsSavingHealthy(false);
   };
 
   const handleAddKeyword = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -166,6 +189,8 @@ function AirgapPage() {
 
           <div className="rounded-lg border bg-secondary/30 p-4">
             <p className="text-sm text-muted-foreground">
+              Healthy sites: <span className="font-medium text-foreground">{healthySites.length}</span>
+              {" · "}
               Domains blocked: <span className="font-medium text-foreground">{blocklist.length}</span>
               {" · "}
               Keywords blocked: <span className="font-medium text-foreground">{keywords.length}</span>
@@ -302,6 +327,64 @@ function AirgapPage() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Heart className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Healthy Sites</CardTitle>
+            </div>
+            <CardDescription>
+              Domains counted as focused study during sessions. Add specific edu URLs or channel
+              paths — not broad social platforms.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form className="space-y-2" onSubmit={handleAddHealthySite}>
+              <div className="flex gap-2">
+                <Input
+                  value={healthyInput}
+                  onChange={(event) => {
+                    setHealthyInput(event.target.value);
+                    setHealthyInputError(null);
+                  }}
+                  placeholder="khanacademy.org or youtube.com/@PhysicsWallah"
+                />
+                <Button type="submit" disabled={isSavingHealthy}>
+                  Add
+                </Button>
+              </div>
+              {healthyInputError && (
+                <p className="text-xs text-destructive">{healthyInputError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Never-healthy roots: {NEVER_HEALTHY.join(", ")}
+              </p>
+            </form>
+
+            <div className="space-y-2">
+              {healthySites.map((entry) => (
+                <div
+                  key={entry}
+                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                >
+                  <span className="min-w-0 truncate text-sm text-foreground">{entry}</span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Remove ${entry}`}
+                    onClick={() => {
+                      void removeHealthySiteEntry(entry);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">

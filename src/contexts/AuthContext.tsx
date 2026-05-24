@@ -5,6 +5,7 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile,
@@ -14,9 +15,11 @@ import { auth } from "../lib/firebase";
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isGuest: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, displayName: string) => Promise<void>;
+  signInAsGuest: (displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -59,6 +62,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInAsGuest = async (displayName: string) => {
+    const userCredential = await signInAnonymously(auth);
+    if (userCredential.user) {
+      await updateProfile(userCredential.user, { displayName });
+      await userCredential.user.reload();
+      const updatedUser = auth.currentUser;
+      if (updatedUser) {
+        const clonedUser = Object.create(
+          Object.getPrototypeOf(updatedUser),
+          Object.getOwnPropertyDescriptors(updatedUser)
+        );
+        setUser(clonedUser);
+      }
+    }
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
   };
@@ -68,9 +87,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         loading,
+        isGuest: user?.isAnonymous ?? false,
         signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
+        signInAsGuest,
         signOut,
       }}
     >

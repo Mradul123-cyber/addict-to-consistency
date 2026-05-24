@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useStore } from "@/lib/store";
 import {
+  bestStreak,
   consistencyQuotient,
   currentStreak,
   dailyMinutes28,
-  daysUntilJEE,
   todayMinutes,
 } from "@/lib/analytics";
+import { daysUntilExam, formatExamDate } from "@/lib/profile";
+import { useProfile } from "@/contexts/ProfileContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -15,9 +17,9 @@ import { HistoryChart } from "@/components/HistoryChart";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — JEE Workstation" },
+      { title: "Dashboard — JEE Console" },
       { name: "description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
-      { property: "og:title", content: "JEE Workstation Dashboard" },
+      { property: "og:title", content: "JEE Console Dashboard" },
       { property: "og:description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
       { property: "og:url", content: "https://addict-to-consistency.lovable.app/" },
     ],
@@ -28,11 +30,14 @@ export const Route = createFileRoute("/")({
 
 function Dashboard() {
   const { sessions, tracks } = useStore();
-  const days = daysUntilJEE();
+  const { profile, targetDate } = useProfile();
+  const days = targetDate ? daysUntilExam(targetDate) : 0;
+  const examLabel = profile ? formatExamDate(profile.targetYear) : "";
   const cq = consistencyQuotient(sessions);
   const today = todayMinutes(sessions);
   const history = dailyMinutes28(sessions);
   const streak = currentStreak(sessions);
+  const best = bestStreak(sessions);
 
   // Subject-wise time breakdown
   const breakdown: Record<string, number> = {};
@@ -79,7 +84,7 @@ function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-semibold tabular-nums">{days}</div>
-            <div className="text-xs text-muted-foreground">days until 20 Jan 2027</div>
+            <div className="text-xs text-muted-foreground">days until {examLabel}</div>
           </CardContent>
         </Card>
         <Card>
@@ -114,6 +119,7 @@ function Dashboard() {
           <CardContent>
             <div className="text-4xl font-semibold tabular-nums">{streak} {streak === 1 ? "day" : "days"}</div>
             <div className="mt-1 text-xs text-muted-foreground">consecutive ≥150 min days</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">Best: {best} {best === 1 ? "day" : "days"}</div>
           </CardContent>
         </Card>
       </div>

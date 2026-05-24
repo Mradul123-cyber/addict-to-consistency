@@ -92,6 +92,12 @@
         border: 1px solid var(--border);
         color: var(--text);
       }
+
+      .note {
+        margin-top: 18px;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
     </style>
   </head>
   <body>
@@ -102,20 +108,35 @@
         once, then refresh the dashboard tab.
       </p>
       <ol>
-        <li>Download or clone the repository locally.</li>
-        <li>Open <code>chrome://extensions</code> in Chrome.</li>
-        <li>Enable Developer mode.</li>
-        <li>Click Load unpacked and select the repo's <code>extension/</code> folder.</li>
-        <li>Return to JEE Workstation and refresh the app tab.</li>
+        <li>
+          Click "Download Extension (.zip)" above, unzip it — you'll get a single extension
+          folder ready to load.
+        </li>
+        <li>
+          Click "Open chrome://extensions" above — or type it manually in your address bar.
+        </li>
+        <li>Toggle Developer mode ON (top-right switch on that page).</li>
+        <li>
+          Click Load unpacked → navigate into the unzipped folder → open the
+          <code>extension</code> subfolder inside it.
+        </li>
+        <li>Return here and refresh — the Airgap Shield will activate automatically.</li>
       </ol>
+      <p class="note">
+        Only works on Chrome or Chromium-based browsers (Brave, Edge). Not supported on Firefox
+        or Safari.
+      </p>
       <div class="actions">
         <a
           class="button button-primary"
-          href="https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension"
+          href="https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension"
           target="_blank"
           rel="noreferrer"
         >
-          Open Extension Folder
+          Download Extension (.zip)
+        </a>
+        <a class="button button-secondary" href="chrome://extensions">
+          Open chrome://extensions
         </a>
         <a class="button button-secondary" href="https://addict-to-consistency.lovable.app/">
           Back to Dashboard

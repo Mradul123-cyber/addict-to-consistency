@@ -1,12 +1,6 @@
 import type { SessionLog } from "./store";
 
-export const JEE_DATE = new Date("2027-01-20T00:00:00");
 export const DAILY_THRESHOLD_MIN = 150;
-
-export function daysUntilJEE(now = new Date()): number {
-  const ms = JEE_DATE.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
-}
 
 export function isoDay(d: Date): string {
   const y = d.getFullYear();
@@ -88,4 +82,35 @@ export function currentStreak(sessions: SessionLog[], now = new Date()): number 
     }
   }
   return streak;
+}
+
+function dayMeetsThreshold(byDay: Record<string, number>, key: string): boolean {
+  return (byDay[key] ?? 0) >= DAILY_THRESHOLD_MIN;
+}
+
+export function bestStreak(sessions: SessionLog[]): number {
+  const byDay = minutesByDay(sessions);
+  const qualifyingDays = Object.keys(byDay)
+    .filter((key) => dayMeetsThreshold(byDay, key))
+    .sort();
+
+  if (qualifyingDays.length === 0) return 0;
+
+  let best = 1;
+  let current = 1;
+
+  for (let i = 1; i < qualifyingDays.length; i++) {
+    const prev = new Date(`${qualifyingDays[i - 1]}T00:00:00`);
+    const curr = new Date(`${qualifyingDays[i]}T00:00:00`);
+    const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      current++;
+      best = Math.max(best, current);
+    } else {
+      current = 1;
+    }
+  }
+
+  return best;
 }

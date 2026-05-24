@@ -1,4 +1,5 @@
 import { useSyncExternalStore, useEffect } from "react";
+import { nanoid } from "nanoid";
 import { SEED_TRACKS } from "./seed";
 import { db, auth } from "./firebase";
 import {
@@ -14,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 
-export type Priority = "High" | "Medium";
+export type Priority = "High" | "Medium" | "Low";
 
 export interface Chapter {
   id: string;
@@ -30,6 +31,22 @@ export interface Track {
   chapters: Chapter[];
 }
 
+export type DriftClassification = "healthy" | "neutral" | "distraction";
+
+export interface DriftDomainVisit {
+  domain: string;
+  minutes: number;
+  classification: DriftClassification;
+}
+
+export interface DriftSummary {
+  healthyMinutes: number;
+  distractionMinutes: number;
+  neutralMinutes: number;
+  neutralDomains: string[];
+  topDomains: DriftDomainVisit[];
+}
+
 export interface SessionLog {
   id: string;
   chapterId: string | null;
@@ -38,6 +55,7 @@ export interface SessionLog {
   focusRating?: 1 | 2 | 3 | 4 | 5;
   source: "timer" | "manual";
   createdAt: number;
+  driftSummary?: DriftSummary;
 }
 
 let tracks: Track[] = [];
@@ -108,6 +126,7 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
           focusRating: data.focusRating,
           source: data.source,
           createdAt: data.createdAt,
+          driftSummary: data.driftSummary,
         } as SessionLog;
       });
       refreshSnap();
@@ -152,7 +171,33 @@ export function useStore() {
   return useSyncExternalStore(subscribe, getSnapshot, () => serverSnap);
 }
 
-// Mutations
+export async function addChapter(trackId: string, name: string, priority: Priority) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const newChapter: Chapter = {
+      id: nanoid(),
+      trackId,
+      name: trimmedName,
+      priority,
+      completion: 0,
+    };
+
+    const updatedTracks = tracks.map((t) =>
+      t.id === trackId ? { ...t, chapters: [...t.chapters, newChapter] } : t,
+    );
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error adding chapter:", err);
+  }
+}
+
 export async function setChapterCompletion(chapterId: string, completion: number) {
   try {
     const uid = auth.currentUser?.uid;

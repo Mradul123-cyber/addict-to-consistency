@@ -1,4 +1,4 @@
-# JEE Workstation
+# JEE Console
 
 > A focus timer and consistency tracker built for JEE aspirants — tracks five curriculum subjects, logs deep-work sessions, and surfaces a daily consistency quotient.
 

@@ -12,6 +12,9 @@ import appCss from "../styles.css?url";
 import { AppNav } from "@/components/AppNav";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/AuthGate";
+import { ProfileProvider } from "@/contexts/ProfileContext";
+import { OnboardingGate } from "@/components/OnboardingGate";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -69,9 +72,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "JEE Workstation" },
+      { title: "JEE Console" },
       { name: "description", content: "Focus timer and consistency tracker for JEE preparation across Physics, Chemistry, and Math." },
-      { property: "og:site_name", content: "JEE Workstation" },
+      { property: "og:site_name", content: "JEE Console" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -84,13 +87,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@graph": [
             {
               "@type": "WebSite",
-              name: "JEE Workstation",
+              name: "JEE Console",
               url: "https://addict-to-consistency.lovable.app",
               description: "Focus timer and consistency tracker for JEE preparation.",
             },
             {
               "@type": "Organization",
-              name: "JEE Workstation",
+              name: "JEE Console",
               url: "https://addict-to-consistency.lovable.app",
             },
           ],
@@ -106,9 +109,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`,
+          }}
+        />
       </head>
       <body>
         {children}
@@ -125,14 +133,19 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AuthGate>
-          <div className="min-h-screen bg-background text-foreground">
-            <AppNav />
-            <main className="mx-auto max-w-6xl px-4 py-8">
-              <Outlet />
-            </main>
-          </div>
+          <ProfileProvider>
+            <OnboardingGate>
+              <div className="min-h-screen bg-background text-foreground">
+                <AppNav />
+                <main className="mx-auto max-w-6xl px-4 py-8">
+                  <Outlet />
+                </main>
+              </div>
+            </OnboardingGate>
+          </ProfileProvider>
         </AuthGate>
       </AuthProvider>
+      <Toaster richColors closeButton position="top-center" />
     </QueryClientProvider>
   );
 }

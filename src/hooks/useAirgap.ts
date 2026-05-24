@@ -23,24 +23,63 @@ export const DEFAULT_BLOCKLIST = [
 
 export const DEFAULT_KEYWORDS: string[] = [];
 
+export const DEFAULT_HEALTHY_SITES = [
+  "chatgpt.com",
+  "claude.ai",
+  "khanacademy.org",
+  "physicswallah.live",
+  "unacademy.com",
+  "jeemains.in",
+  "ncert.nic.in",
+];
+
+export const NEVER_HEALTHY = [
+  "youtube.com",
+  "instagram.com",
+  "twitter.com",
+  "reddit.com",
+  "netflix.com",
+  "facebook.com",
+  "snapchat.com",
+  "tiktok.com",
+  "twitch.tv",
+  "discord.com",
+] as const;
+
 const RESPONSE_TIMEOUT_MS = 1200;
+const FOCUS_RESPONSE_TIMEOUT_MS = 5000;
 
 type AirgapCommand = "AIRGAP_ON" | "AIRGAP_OFF" | "AIRGAP_GET_STATE";
+type FocusCommand = "FOCUS_SESSION_START" | "FOCUS_SESSION_END";
+type ExtensionCommand = AirgapCommand | FocusCommand;
+
+export type FocusSessionSummary = {
+  healthyMinutes: number;
+  distractionMinutes: number;
+  neutralMinutes: number;
+  neutralDomains: string[];
+  topDomains?: { domain: string; minutes: number; classification: string }[];
+};
 
 type AirgapResponse = {
   type: "AIRGAP_RESPONSE";
-  originalType?: AirgapCommand;
+  originalType?: ExtensionCommand;
   state?: boolean;
   blocklist?: string[];
   keywords?: string[];
   success?: boolean;
   error?: string;
   activatedAt?: number | null;
+  healthyMinutes?: number;
+  distractionMinutes?: number;
+  neutralMinutes?: number;
+  neutralDomains?: string[];
+  topDomains?: { domain: string; minutes: number; classification: string }[];
 };
 
 type PendingRequest = {
   id: number;
-  type: AirgapCommand;
+  type: ExtensionCommand;
   timeoutId: number;
   resolve: (response: AirgapResponse) => void;
   reject: (reason?: unknown) => void;
@@ -49,7 +88,12 @@ type PendingRequest = {
 type PersistedPreferences = {
   blocklist: string[];
   keywords: string[];
+  healthySites: string[];
 };
+
+function isNeverHealthyHostname(hostname: string) {
+  return NEVER_HEALTHY.includes(hostname as (typeof NEVER_HEALTHY)[number]);
+}
 
 function isAirgapResponse(value: unknown): value is AirgapResponse {
   return Boolean(
@@ -119,6 +163,7 @@ export function useAirgap() {
   const [isExtensionReady, setIsExtensionReady] = useState(false);
   const [blocklist, setBlocklist] = useState<string[]>(DEFAULT_BLOCKLIST);
   const [keywords, setKeywords] = useState<string[]>(DEFAULT_KEYWORDS);
+  const [healthySites, setHealthySites] = useState<string[]>(DEFAULT_HEALTHY_SITES);
   const [isPreferencesReady, setIsPreferencesReady] = useState(false);
 
   const nextRequestIdRef = useRef(0);
@@ -151,8 +196,17 @@ export function useAirgap() {
     [isPreferencesReady],
   );
 
-  const sendAirgapMessage = useCallback(
-    (type: AirgapCommand, nextBlocklist?: string[], nextKeywords?: string[]) =>
+  const sendExtensionMessage = useCallback(
+    (
+      type: ExtensionCommand,
+      payload?: {
+        blocklist?: string[];
+        keywords?: string[];
+        healthySites?: string[];
+        blockedDomains?: string[];
+      },
+      timeoutMs = RESPONSE_TIMEOUT_MS,
+    ) =>
       new Promise<AirgapResponse>((resolve, reject) => {
         if (typeof window === "undefined") {
           reject(new Error("Window is unavailable."));
@@ -167,7 +221,7 @@ export function useAirgap() {
             (request) => request.id !== requestId,
           );
           reject(new Error("Extension unavailable."));
-        }, RESPONSE_TIMEOUT_MS);
+        }, timeoutMs);
 
         pendingRequestsRef.current.push({
           id: requestId,
@@ -180,13 +234,21 @@ export function useAirgap() {
         window.postMessage(
           {
             type,
-            ...(nextBlocklist ? { blocklist: nextBlocklist } : {}),
-            ...(nextKeywords ? { keywords: nextKeywords } : {}),
+            ...(payload?.blocklist ? { blocklist: payload.blocklist } : {}),
+            ...(payload?.keywords ? { keywords: payload.keywords } : {}),
+            ...(payload?.healthySites ? { healthySites: payload.healthySites } : {}),
+            ...(payload?.blockedDomains ? { blockedDomains: payload.blockedDomains } : {}),
           },
           window.location.origin,
         );
       }),
     [],
+  );
+
+  const sendAirgapMessage = useCallback(
+    (type: AirgapCommand, nextBlocklist?: string[], nextKeywords?: string[]) =>
+      sendExtensionMessage(type, { blocklist: nextBlocklist, keywords: nextKeywords }),
+    [sendExtensionMessage],
   );
 
   const syncState = useCallback(async () => {
@@ -210,6 +272,7 @@ export function useAirgap() {
 
       const safeBlocklist = sanitizeBlocklist(next.blocklist);
       const safeKeywords = sanitizeKeywords(next.keywords);
+      const safeHealthySites = sanitizeBlocklist(next.healthySites);
 
       try {
         await setDoc(
@@ -217,12 +280,14 @@ export function useAirgap() {
           {
             airgapBlocklist: safeBlocklist,
             airgapKeywords: safeKeywords,
+            airgapHealthySites: safeHealthySites,
           },
           { merge: true },
         );
 
         setBlocklist(safeBlocklist);
         setKeywords(safeKeywords);
+        setHealthySites(safeHealthySites);
 
         if (isExtensionReady && isOn) {
           const response = await sendAirgapMessage("AIRGAP_ON", safeBlocklist, safeKeywords);
@@ -252,9 +317,10 @@ export function useAirgap() {
       return persistPreferences({
         blocklist: [...blocklist, normalized],
         keywords,
+        healthySites,
       });
     },
-    [blocklist, keywords, persistPreferences],
+    [blocklist, healthySites, keywords, persistPreferences],
   );
 
   const removeBlocklistEntry = useCallback(
@@ -262,8 +328,47 @@ export function useAirgap() {
       persistPreferences({
         blocklist: blocklist.filter((value) => value !== entry),
         keywords,
+        healthySites,
       }),
-    [blocklist, keywords, persistPreferences],
+    [blocklist, healthySites, keywords, persistPreferences],
+  );
+
+  const addHealthySiteEntry = useCallback(
+    async (input: string) => {
+      const normalized = normalizeBlocklistEntry(input);
+      if (!normalized) {
+        return { ok: false as const, error: "Enter a valid domain or URL." };
+      }
+
+      if (isNeverHealthyHostname(normalized)) {
+        return {
+          ok: false as const,
+          error:
+            "This site stays blocked — add a specific edu URL or YouTube channel instead.",
+        };
+      }
+
+      if (healthySites.includes(normalized)) {
+        return { ok: false as const, error: "This site is already on your healthy list." };
+      }
+
+      return persistPreferences({
+        blocklist,
+        keywords,
+        healthySites: [...healthySites, normalized],
+      });
+    },
+    [blocklist, healthySites, keywords, persistPreferences],
+  );
+
+  const removeHealthySiteEntry = useCallback(
+    async (entry: string) =>
+      persistPreferences({
+        blocklist,
+        keywords,
+        healthySites: healthySites.filter((value) => value !== entry),
+      }),
+    [blocklist, healthySites, keywords, persistPreferences],
   );
 
   const addKeyword = useCallback(
@@ -280,9 +385,10 @@ export function useAirgap() {
       return persistPreferences({
         blocklist,
         keywords: [...keywords, normalized],
+        healthySites,
       });
     },
-    [blocklist, keywords, persistPreferences],
+    [blocklist, healthySites, keywords, persistPreferences],
   );
 
   const removeKeyword = useCallback(
@@ -290,9 +396,47 @@ export function useAirgap() {
       persistPreferences({
         blocklist,
         keywords: keywords.filter((value) => value !== entry),
+        healthySites,
       }),
-    [blocklist, keywords, persistPreferences],
+    [blocklist, healthySites, keywords, persistPreferences],
   );
+
+  const startFocusTracking = useCallback(
+    async (healthySitesList: string[], blockedDomainsList: string[]) => {
+      try {
+        await sendExtensionMessage(
+          "FOCUS_SESSION_START",
+          {
+            healthySites: healthySitesList,
+            blockedDomains: blockedDomainsList,
+          },
+          RESPONSE_TIMEOUT_MS,
+        );
+      } catch {
+        // Extension not available — focus tracking is optional
+      }
+    },
+    [sendExtensionMessage],
+  );
+
+  const endFocusTracking = useCallback(async (): Promise<FocusSessionSummary | null> => {
+    if (!isExtensionReady) return null;
+
+    try {
+      const response = await sendExtensionMessage("FOCUS_SESSION_END", {}, FOCUS_RESPONSE_TIMEOUT_MS);
+      if (response.success === false) return null;
+
+      return {
+        healthyMinutes: Number(response.healthyMinutes ?? 0),
+        distractionMinutes: Number(response.distractionMinutes ?? 0),
+        neutralMinutes: Number(response.neutralMinutes ?? 0),
+        neutralDomains: Array.isArray(response.neutralDomains) ? response.neutralDomains : [],
+        topDomains: Array.isArray(response.topDomains) ? response.topDomains : [],
+      };
+    } catch {
+      return null;
+    }
+  }, [isExtensionReady, sendExtensionMessage]);
 
   const toggle = useCallback(async () => {
     let nextType: AirgapCommand = isOn ? "AIRGAP_OFF" : "AIRGAP_ON";
@@ -318,6 +462,7 @@ export function useAirgap() {
     if (!user) {
       setBlocklist(DEFAULT_BLOCKLIST);
       setKeywords(DEFAULT_KEYWORDS);
+      setHealthySites(DEFAULT_HEALTHY_SITES);
       setIsPreferencesReady(true);
       return undefined;
     }
@@ -334,29 +479,40 @@ export function useAirgap() {
         const nextKeywords = Array.isArray(data?.airgapKeywords)
           ? sanitizeKeywords(data.airgapKeywords)
           : DEFAULT_KEYWORDS;
+        const nextHealthySites = Array.isArray(data?.airgapHealthySites)
+          ? sanitizeBlocklist(data.airgapHealthySites)
+          : DEFAULT_HEALTHY_SITES;
 
         setBlocklist(nextBlocklist);
         setKeywords(nextKeywords);
+        setHealthySites(nextHealthySites);
         setIsPreferencesReady(true);
 
         const shouldSeedBlocklist = !Array.isArray(data?.airgapBlocklist);
         const shouldSeedKeywords = !Array.isArray(data?.airgapKeywords);
+        const shouldSeedHealthySites = !Array.isArray(data?.airgapHealthySites);
         const shouldNormalizeBlocklist =
           Array.isArray(data?.airgapBlocklist) && !arraysEqual(nextBlocklist, data.airgapBlocklist);
         const shouldNormalizeKeywords =
           Array.isArray(data?.airgapKeywords) && !arraysEqual(nextKeywords, data.airgapKeywords);
+        const shouldNormalizeHealthySites =
+          Array.isArray(data?.airgapHealthySites) &&
+          !arraysEqual(nextHealthySites, data.airgapHealthySites);
 
         if (
           shouldSeedBlocklist ||
           shouldSeedKeywords ||
+          shouldSeedHealthySites ||
           shouldNormalizeBlocklist ||
-          shouldNormalizeKeywords
+          shouldNormalizeKeywords ||
+          shouldNormalizeHealthySites
         ) {
           await setDoc(
             userDocRef,
             {
               airgapBlocklist: nextBlocklist,
               airgapKeywords: nextKeywords,
+              airgapHealthySites: nextHealthySites,
             },
             { merge: true },
           );
@@ -432,9 +588,14 @@ export function useAirgap() {
     toggle,
     blocklist,
     keywords,
+    healthySites,
     addBlocklistEntry,
     removeBlocklistEntry,
+    addHealthySiteEntry,
+    removeHealthySiteEntry,
     addKeyword,
     removeKeyword,
+    startFocusTracking,
+    endFocusTracking,
   };
 }
