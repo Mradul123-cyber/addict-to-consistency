@@ -66,10 +66,8 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
-const PWA_ASSET_PATTERNS = [
+const STATIC_PWA_FILES = [
   /^\/sw\.js$/,
-  /^\/workbox-[^/]+\.js$/,
-  /^\/registerSW\.js$/,
   /^\/manifest\.webmanifest$/,
 ];
 
@@ -80,7 +78,7 @@ export default {
     try {
       const url = new URL(request.url);
       const assets = (env as AssetsEnv | undefined)?.ASSETS;
-      if (assets && PWA_ASSET_PATTERNS.some((re) => re.test(url.pathname))) {
+      if (assets && STATIC_PWA_FILES.some((re) => re.test(url.pathname))) {
         return assets.fetch(request);
       }
       const handler = await getServerEntry();
