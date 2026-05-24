@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useStore } from "@/lib/store";
 import { daysUntilExam } from "@/lib/profile";
@@ -27,12 +27,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { Download, LogOut, Menu, Moon, Sun, User, X } from "lucide-react";
-
-/** Chromium PWA install prompt (not available on iOS Safari). */
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
+import {
+  getDeferredPrompt,
+  isInstalledPwa,
+  subscribePwaInstall,
+  triggerInstallPrompt,
+} from "@/lib/pwa-install";
 
 function isIOSDevice() {
   if (typeof navigator === "undefined") return false;
