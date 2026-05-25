@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -115,6 +116,8 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <meta name="theme-color" content="#1a1f4b" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`,
@@ -134,6 +137,12 @@ function RootComponent() {
   const isNotesRoute = useRouterState({
     select: (s) => s.location.pathname.startsWith("/notes"),
   });
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(console.error);
+    }
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

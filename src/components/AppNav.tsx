@@ -56,13 +56,6 @@ function isIOSDevice() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-function isInstalledPwa() {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
-}
 
 const links = [
   { to: "/", label: "Dashboard" },
@@ -102,6 +95,7 @@ export function AppNav() {
   const { bookmarkCount, openBookmarks } = useNotesChrome();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [customGoalOpen, setCustomGoalOpen] = useState(false);
   const [customGoalValue, setCustomGoalValue] = useState("");
@@ -114,27 +108,11 @@ export function AppNav() {
     "If no install dialog appeared: in Chrome or Edge, open the menu (⋮) or look for an install icon in the address bar, then choose \"Install\" or \"Install Matrix\".";
 
   useEffect(() => {
-    const updateInstalled = () => setIsInstalled(isInstalledPwa());
-
-    updateInstalled();
-
-    const onBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      deferredPromptRef.current = event as BeforeInstallPromptEvent;
+    const sync = () => {
+      setIsInstalled(isInstalledPwa());
     };
-
-    const onAppInstalled = () => {
-      deferredPromptRef.current = null;
-      setIsInstalled(true);
-    };
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-    window.addEventListener("appinstalled", onAppInstalled);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onAppInstalled);
-    };
+    sync();
+    return subscribePwaInstall(sync);
   }, []);
 
   const handleInstallClick = async () => {
@@ -143,32 +121,17 @@ export function AppNav() {
       return;
     }
 
-    const prompt = deferredPromptRef.current;
-    if (!prompt) {
+    const outcome = await triggerInstallPrompt();
+    if (outcome === "accepted") {
+      setIsInstalled(true);
+      toast.success("Matrix installed!");
+    } else if (outcome === "dismissed") {
+      toast.message("Install dismissed", {
+        description: "You can install anytime from the profile menu.",
+      });
+    } else {
       setInstallHelpOpen(true);
       toast.info("Install instructions", {
-        description: desktopInstallFallbackMessage,
-        duration: 8000,
-      });
-      return;
-    }
-
-    try {
-      await prompt.prompt();
-      const { outcome } = await prompt.userChoice;
-      if (outcome === "accepted") {
-        deferredPromptRef.current = null;
-        setIsInstalled(true);
-        toast.success("Matrix installed!");
-      } else {
-        toast.message("Install dismissed", {
-          description: "You can install anytime from the profile menu.",
-        });
-      }
-    } catch (err) {
-      console.error("PWA install prompt failed:", err);
-      setInstallHelpOpen(true);
-      toast.error("Could not open install dialog", {
         description: desktopInstallFallbackMessage,
         duration: 8000,
       });
