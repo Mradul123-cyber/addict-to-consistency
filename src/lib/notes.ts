@@ -120,9 +120,7 @@ async function fetchJsonFromStorage<T = NotesDocument>(path: string): Promise<T 
   const storageRef = ref(storage, path);
 
   try {
-    const bytes = await getBytes(storageRef, {
-      maxDownloadSizeBytes: MAX_NOTES_JSON_BYTES,
-    });
+    const bytes = await getBytes(storageRef, MAX_NOTES_JSON_BYTES);
     const parsed = parseStorageJson<T>(new TextDecoder().decode(bytes));
     if (parsed) return parsed;
   } catch {
