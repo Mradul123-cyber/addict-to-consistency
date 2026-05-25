@@ -1,0 +1,26 @@
+{
+  "sections": [
+    {
+      "title": "Standard Derivatives",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Power rule",
+          "formula": "d/dx (xⁿ) = n·xⁿ⁻¹"
+        },
+        {
+          "label": "Sine",
+          "formula": "d/dx (sin x) = cos x"
+        },
+        {
+          "label": "Exponential",
+          "formula": "d/dx (eˣ) = eˣ"
+        },
+        {
+          "label": "Logarithm",
+          "formula": "d/dx (ln x) = 1/x"
+        }
+      ]
+    }
+  ]
+}

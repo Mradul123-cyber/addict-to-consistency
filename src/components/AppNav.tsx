@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useStore } from "@/lib/store";
-import { daysUntilExam } from "@/lib/profile";
+import {
+  canChangeDailyGoal,
+  DAILY_GOAL_OPTIONS,
+  DEFAULT_DAILY_GOAL_MINUTES,
+  daysUntilExam,
+  MAX_DAILY_GOAL_MINUTES,
+  MIN_DAILY_GOAL_MINUTES,
+  nextDailyGoalChangeDate,
+} from "@/lib/profile";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAirgap } from "@/hooks/useAirgap";
 import { useTheme } from "@/hooks/useTheme";
+import { useNotesChrome } from "@/contexts/NotesChromeContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -22,11 +32,18 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Download, LogOut, Menu, Moon, Sun, User, X } from "lucide-react";
+import { Bookmark, Download, LogOut, Menu, Moon, Sun, Target, X } from "lucide-react";
 
 /** Chromium PWA install prompt (not available on iOS Safari). */
 interface BeforeInstallPromptEvent extends Event {
@@ -50,6 +67,7 @@ function isInstalledPwa() {
 const links = [
   { to: "/", label: "Dashboard" },
   { to: "/tracks", label: "Tracks" },
+  { to: "/notes", label: "Notes" },
   { to: "/focus", label: "Focus" },
   { to: "/log", label: "Log" },
   { to: "/airgap", label: "Airgap" },
@@ -73,14 +91,20 @@ function getInitials(name: string | null, email: string | null): string {
 
 export function AppNav() {
   useStore();
-  const { profile, targetDate } = useProfile();
+  const { profile, targetDate, saveDailyGoalMinutes } = useProfile();
   const days = targetDate ? daysUntilExam(targetDate) : 0;
   const { user, signOut } = useAuth();
   const { isOn, isExtensionReady } = useAirgap();
   const { isDark, toggleTheme } = useTheme();
+  const isNotesRoute = useRouterState({
+    select: (s) => s.location.pathname.startsWith("/notes"),
+  });
+  const { bookmarkCount, openBookmarks } = useNotesChrome();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
+  const [customGoalOpen, setCustomGoalOpen] = useState(false);
+  const [customGoalValue, setCustomGoalValue] = useState("");
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   const iosInstallMessage =
@@ -161,6 +185,72 @@ export function AppNav() {
 
   const initials = user ? getInitials(user.displayName, user.email) : "";
   const photoURL = user?.photoURL ?? null;
+  const dailyGoalMinutes = profile?.dailyGoalMinutes ?? DEFAULT_DAILY_GOAL_MINUTES;
+  const goalCanChange = canChangeDailyGoal(profile?.dailyGoalChangedAt);
+  const nextGoalChangeDate = nextDailyGoalChangeDate(profile?.dailyGoalChangedAt);
+  const nextGoalChangeLabel = nextGoalChangeDate
+    ? nextGoalChangeDate.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+
+  const handleDailyGoalChange = async (value: string) => {
+    const minutes = Number(value);
+    if (!Number.isFinite(minutes) || minutes === dailyGoalMinutes) return;
+    if (!goalCanChange) {
+      toast.warning("Daily goal is locked", {
+        description: nextGoalChangeLabel
+          ? `You can change it again on ${nextGoalChangeLabel}.`
+          : "You can change it once every 30 days.",
+      });
+      return;
+    }
+
+    const toastId = toast.loading("Updating daily goal...");
+    try {
+      await saveDailyGoalMinutes(minutes);
+      toast.success(`Daily goal updated to ${minutes} minutes.`, { id: toastId });
+    } catch (err) {
+      console.error("Daily goal update failed:", err);
+      toast.error("Could not update daily goal", {
+        id: toastId,
+        description:
+          err instanceof Error ? err.message : "Daily goal can only be changed once every 30 days.",
+      });
+    }
+  };
+
+  const openCustomGoalDialog = () => {
+    if (!goalCanChange) {
+      toast.warning("Daily goal is locked", {
+        description: nextGoalChangeLabel
+          ? `You can change it again on ${nextGoalChangeLabel}.`
+          : "You can change it once every 30 days.",
+      });
+      return;
+    }
+    setCustomGoalValue(String(dailyGoalMinutes));
+    setCustomGoalOpen(true);
+  };
+
+  const handleCustomGoalSubmit = async () => {
+    const minutes = Number(customGoalValue);
+    if (
+      !Number.isFinite(minutes) ||
+      minutes < MIN_DAILY_GOAL_MINUTES ||
+      minutes > MAX_DAILY_GOAL_MINUTES
+    ) {
+      toast.error(
+        `Daily goal must be between ${MIN_DAILY_GOAL_MINUTES} and ${MAX_DAILY_GOAL_MINUTES} minutes.`,
+      );
+      return;
+    }
+
+    setCustomGoalOpen(false);
+    await handleDailyGoalChange(String(Math.round(minutes)));
+  };
 
   return (
     <header className="border-b bg-card">
@@ -201,8 +291,25 @@ export function AppNav() {
           </nav>
         </div>
 
-        {/* Right: theme, countdown, airgap, avatar */}
+        {/* Right: bookmarks (notes), theme, countdown, airgap, avatar */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+          {isNotesRoute && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="relative h-9 w-9"
+              aria-label="Saved formulas"
+              onClick={openBookmarks}
+            >
+              <Bookmark className="h-4 w-4" />
+              {bookmarkCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                  {bookmarkCount}
+                </span>
+              )}
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -303,10 +410,50 @@ export function AppNav() {
 
                 {!isInstalled && <DropdownMenuSeparator />}
 
-                <DropdownMenuItem disabled className="cursor-default opacity-50">
-                  <User className="mr-2 h-4 w-4" />
-                  Profile (coming soon)
-                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer">
+                    <Target className="mr-2 h-4 w-4" />
+                    Daily goal
+                    <span className="rounded bg-muted px-1 text-xs text-muted-foreground">
+                      {dailyGoalMinutes}m
+                    </span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-48">
+                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                      {goalCanChange
+                        ? "Choose your daily goal"
+                        : `Locked until ${nextGoalChangeLabel ?? "30 days pass"}`}
+                    </DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={String(dailyGoalMinutes)}
+                      onValueChange={(value) => {
+                        void handleDailyGoalChange(value);
+                      }}
+                    >
+                      {DAILY_GOAL_OPTIONS.map((minutes) => (
+                        <DropdownMenuRadioItem
+                          key={minutes}
+                          value={String(minutes)}
+                          disabled={!goalCanChange && minutes !== dailyGoalMinutes}
+                          className="cursor-pointer"
+                        >
+                          {minutes} minutes
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={!goalCanChange}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        openCustomGoalDialog();
+                      }}
+                    >
+                      Custom minutes
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
 
                 <DropdownMenuSeparator />
 
@@ -334,6 +481,40 @@ export function AppNav() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction>Got it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={customGoalOpen} onOpenChange={setCustomGoalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Custom Daily Goal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose a daily focus goal from {MIN_DAILY_GOAL_MINUTES} to {MAX_DAILY_GOAL_MINUTES} minutes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="custom-daily-goal">Minutes</Label>
+            <Input
+              id="custom-daily-goal"
+              type="number"
+              min={MIN_DAILY_GOAL_MINUTES}
+              max={MAX_DAILY_GOAL_MINUTES}
+              value={customGoalValue}
+              onChange={(e) => setCustomGoalValue(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleCustomGoalSubmit();
+              }}
+            >
+              Save goal
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

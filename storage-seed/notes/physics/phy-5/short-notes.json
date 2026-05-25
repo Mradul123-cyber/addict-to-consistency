@@ -1,0 +1,39 @@
+{
+  "sections": [
+    {
+      "title": "First Law of Thermodynamics",
+      "content": "Energy can neither be created nor destroyed. The change in internal energy of a system equals the heat added to the system minus the work done by the system.",
+      "formulas": [
+        {
+          "label": "First law",
+          "formula": "ΔU = q + w"
+        }
+      ]
+    },
+    {
+      "title": "Enthalpy",
+      "content": "Enthalpy is a state function defined for constant-pressure processes. The enthalpy change of a reaction equals the heat absorbed or released at constant pressure.",
+      "formulas": [
+        {
+          "label": "Enthalpy",
+          "formula": "H = U + PV"
+        }
+      ]
+    },
+    {
+      "title": "Second Law and Entropy",
+      "content": "The entropy of an isolated system always increases in a spontaneous process. Entropy is a measure of disorder or the number of accessible microstates.",
+      "formulas": []
+    },
+    {
+      "title": "Gibbs Free Energy",
+      "content": "Gibbs free energy combines enthalpy and entropy to predict spontaneity at constant T and P. A negative ΔG indicates a spontaneous process.",
+      "formulas": [
+        {
+          "label": "Gibbs",
+          "formula": "ΔG = ΔH - T·ΔS"
+        }
+      ]
+    }
+  ]
+}

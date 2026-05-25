@@ -1,0 +1,39 @@
+{
+  "sections": [
+    {
+      "title": "Introduction",
+      "content": "Chemical kinetics is the branch of chemistry concerned with the rates of chemical reactions and the factors that influence them — concentration, temperature, catalysts, and the nature of reactants.",
+      "formulas": []
+    },
+    {
+      "title": "Rate of Reaction",
+      "content": "The rate of a reaction is defined as the change in concentration of a reactant or product per unit time. Average rate is measured over an interval, while instantaneous rate is the slope of the concentration-time curve at a point.",
+      "formulas": [
+        {
+          "label": "Average rate",
+          "formula": "rate = -Δ[R]/Δt = +Δ[P]/Δt"
+        }
+      ]
+    },
+    {
+      "title": "Order and Molecularity",
+      "content": "Order is experimentally determined and refers to the sum of powers of concentration terms in the rate law. Molecularity is the number of reacting species in an elementary step and is always a whole number.",
+      "formulas": []
+    },
+    {
+      "title": "Arrhenius Equation",
+      "content": "The Arrhenius equation describes the temperature dependence of the rate constant. A higher activation energy means the rate is more sensitive to temperature.",
+      "formulas": [
+        {
+          "label": "Arrhenius",
+          "formula": "k = A·e^(-Ea/RT)"
+        }
+      ]
+    },
+    {
+      "title": "Catalysis",
+      "content": "A catalyst increases the reaction rate by providing an alternative pathway with lower activation energy. It does not alter the equilibrium constant or ΔG of the reaction.",
+      "formulas": []
+    }
+  ]
+}

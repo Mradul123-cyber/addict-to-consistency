@@ -1,0 +1,50 @@
+{
+  "sections": [
+    {
+      "title": "Rate Laws",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Zero order",
+          "formula": "[R] = [R]₀ - k·t"
+        },
+        {
+          "label": "First order",
+          "formula": "ln([R]₀/[R]) = k·t"
+        },
+        {
+          "label": "Second order",
+          "formula": "1/[R] - 1/[R]₀ = k·t"
+        }
+      ]
+    },
+    {
+      "title": "Half-Life",
+      "content": "",
+      "formulas": [
+        {
+          "label": "First order t½",
+          "formula": "t½ = 0.693 / k"
+        },
+        {
+          "label": "Zero order t½",
+          "formula": "t½ = [R]₀ / (2k)"
+        }
+      ]
+    },
+    {
+      "title": "Temperature Dependence",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Arrhenius",
+          "formula": "k = A·e^(-Ea/RT)"
+        },
+        {
+          "label": "Two-temperature form",
+          "formula": "ln(k₂/k₁) = (Ea/R)·(1/T₁ - 1/T₂)"
+        }
+      ]
+    }
+  ]
+}

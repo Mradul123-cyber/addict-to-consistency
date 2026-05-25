@@ -1,14 +1,20 @@
-import { DAILY_THRESHOLD_MIN } from "@/lib/analytics";
+import { DEFAULT_DAILY_GOAL_MINUTES } from "@/lib/profile";
 
-export function HistoryChart({ data }: { data: { date: string; minutes: number }[] }) {
-  const max = Math.max(DAILY_THRESHOLD_MIN, ...data.map((d) => d.minutes));
+export function HistoryChart({
+  data,
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+}: {
+  data: { date: string; minutes: number }[];
+  dailyGoalMinutes?: number;
+}) {
+  const max = Math.max(dailyGoalMinutes, ...data.map((d) => d.minutes));
   return (
     <div>
       <div className="flex h-32 items-end gap-1">
         {data.map((d, i) => {
           const isToday = i === data.length - 1;
           const h = max === 0 ? 0 : (d.minutes / max) * 100;
-          const hit = d.minutes >= DAILY_THRESHOLD_MIN;
+          const hit = d.minutes >= dailyGoalMinutes;
           return (
             <div
               key={d.date}
@@ -27,7 +33,7 @@ export function HistoryChart({ data }: { data: { date: string; minutes: number }
       </div>
       <div className="mt-2 flex justify-between text-[10px] text-muted-foreground tabular-nums">
         <span>28 days ago</span>
-        <span>Threshold {DAILY_THRESHOLD_MIN}m</span>
+        <span>Goal {dailyGoalMinutes}m</span>
         <span className="text-foreground">Today</span>
       </div>
     </div>

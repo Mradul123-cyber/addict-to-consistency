@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TracksRouteImport } from './routes/tracks'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as NotesRouteImport } from './routes/notes'
 import { Route as MatrixRouteImport } from './routes/matrix'
 import { Route as LogRouteImport } from './routes/log'
 import { Route as FocusRouteImport } from './routes/focus'
@@ -25,6 +26,11 @@ const TracksRoute = TracksRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotesRoute = NotesRouteImport.update({
+  id: '/notes',
+  path: '/notes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatrixRoute = MatrixRouteImport.update({
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tracks': typeof TracksRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tracks': typeof TracksRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tracks': typeof TracksRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/notes'
     | '/sitemap.xml'
     | '/tracks'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/notes'
     | '/sitemap.xml'
     | '/tracks'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/notes'
     | '/sitemap.xml'
     | '/tracks'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   FocusRoute: typeof FocusRoute
   LogRoute: typeof LogRoute
   MatrixRoute: typeof MatrixRoute
+  NotesRoute: typeof NotesRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TracksRoute: typeof TracksRoute
 }
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notes': {
+      id: '/notes'
+      path: '/notes'
+      fullPath: '/notes'
+      preLoaderRoute: typeof NotesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/matrix': {
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   FocusRoute: FocusRoute,
   LogRoute: LogRoute,
   MatrixRoute: MatrixRoute,
+  NotesRoute: NotesRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TracksRoute: TracksRoute,
 }

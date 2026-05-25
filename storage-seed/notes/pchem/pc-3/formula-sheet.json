@@ -1,0 +1,50 @@
+{
+  "sections": [
+    {
+      "title": "Core Relations",
+      "content": "",
+      "formulas": [
+        {
+          "label": "First law",
+          "formula": "ΔU = q + w"
+        },
+        {
+          "label": "Work (reversible, isothermal)",
+          "formula": "w = -nRT·ln(V₂/V₁)"
+        },
+        {
+          "label": "Enthalpy",
+          "formula": "H = U + PV"
+        }
+      ]
+    },
+    {
+      "title": "Heat Capacities",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Cp - Cv (ideal gas)",
+          "formula": "Cp - Cv = R"
+        },
+        {
+          "label": "γ (gamma)",
+          "formula": "γ = Cp / Cv"
+        }
+      ]
+    },
+    {
+      "title": "Spontaneity",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Gibbs energy",
+          "formula": "ΔG = ΔH - T·ΔS"
+        },
+        {
+          "label": "Standard Gibbs",
+          "formula": "ΔG° = -RT·ln(K)"
+        }
+      ]
+    }
+  ]
+}

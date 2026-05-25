@@ -1,0 +1,18 @@
+{
+  "sections": [
+    {
+      "title": "Crystal Field",
+      "content": "",
+      "formulas": [
+        {
+          "label": "CFSE (octahedral)",
+          "formula": "CFSE = (-0.4·n(t₂g) + 0.6·n(eg))·Δo"
+        },
+        {
+          "label": "Magnetic moment",
+          "formula": "μ = √(n(n+2)) BM"
+        }
+      ]
+    }
+  ]
+}

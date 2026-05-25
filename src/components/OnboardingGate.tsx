@@ -1,8 +1,16 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useProfile } from "@/contexts/ProfileContext";
-import { JEE_TARGET_YEARS, type JeeTargetYear } from "@/lib/profile";
+import {
+  DAILY_GOAL_OPTIONS,
+  DEFAULT_DAILY_GOAL_MINUTES,
+  MAX_DAILY_GOAL_MINUTES,
+  MIN_DAILY_GOAL_MINUTES,
+  JEE_TARGET_YEARS,
+  type JeeTargetYear,
+} from "@/lib/profile";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -14,18 +22,25 @@ import {
 import { toast } from "sonner";
 
 export function OnboardingModal() {
-  const { saveTargetYear } = useProfile();
+  const { saveProfile } = useProfile();
   const [selectedYear, setSelectedYear] = useState<JeeTargetYear>(2027);
+  const [dailyGoalMinutes, setDailyGoalMinutes] = useState(DEFAULT_DAILY_GOAL_MINUTES);
+  const [dailyGoalMode, setDailyGoalMode] = useState("150");
   const [saving, setSaving] = useState(false);
 
   const handleConfirm = async () => {
+    if (dailyGoalMinutes < MIN_DAILY_GOAL_MINUTES || dailyGoalMinutes > MAX_DAILY_GOAL_MINUTES) {
+      toast.error(`Daily goal must be between ${MIN_DAILY_GOAL_MINUTES} and ${MAX_DAILY_GOAL_MINUTES} minutes.`);
+      return;
+    }
+
     setSaving(true);
     try {
-      await saveTargetYear(selectedYear);
+      await saveProfile({ targetYear: selectedYear, dailyGoalMinutes });
       toast.success(`Your JEE ${selectedYear} countdown is ready.`);
     } catch (err) {
       console.error("Failed to save profile:", err);
-      toast.error("Could not save your exam year. Please try again.");
+      toast.error("Could not save your profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -41,7 +56,7 @@ export function OnboardingModal() {
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-bold tracking-tight">Welcome to JEE Console</h1>
           <p className="text-sm text-muted-foreground">
-            Set your target exam year so we can personalize your countdown and dashboard.
+            Set your target exam year and daily focus goal so we can personalize your dashboard.
           </p>
         </div>
 
@@ -66,6 +81,40 @@ export function OnboardingModal() {
           <p className="text-xs text-muted-foreground">
             Your countdown will target 20 January {selectedYear}.
           </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="daily-goal">Daily focus goal</Label>
+          <Select
+            value={dailyGoalMode}
+            onValueChange={(value) => {
+              setDailyGoalMode(value);
+              if (value !== "custom") setDailyGoalMinutes(Number(value));
+            }}
+            disabled={saving}
+          >
+            <SelectTrigger id="daily-goal" className="w-full">
+              <SelectValue placeholder="Select daily goal" />
+            </SelectTrigger>
+            <SelectContent>
+              {DAILY_GOAL_OPTIONS.map((minutes) => (
+                <SelectItem key={minutes} value={String(minutes)}>
+                  {minutes} minutes/day
+                </SelectItem>
+              ))}
+              <SelectItem value="custom">Custom</SelectItem>
+            </SelectContent>
+          </Select>
+          {dailyGoalMode === "custom" && (
+            <Input
+              type="number"
+              min={MIN_DAILY_GOAL_MINUTES}
+              max={MAX_DAILY_GOAL_MINUTES}
+              value={dailyGoalMinutes}
+              onChange={(e) => setDailyGoalMinutes(Number(e.target.value))}
+              disabled={saving}
+            />
+          )}
         </div>
 
         <Button className="w-full" onClick={() => void handleConfirm()} disabled={saving}>

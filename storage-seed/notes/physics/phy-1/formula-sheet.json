@@ -1,0 +1,22 @@
+{
+  "sections": [
+    {
+      "title": "Equations of Motion",
+      "content": "",
+      "formulas": [
+        {
+          "label": "Velocity",
+          "formula": "v = u + a·t"
+        },
+        {
+          "label": "Displacement",
+          "formula": "s = u·t + ½·a·t²"
+        },
+        {
+          "label": "v²–u²",
+          "formula": "v² = u² + 2·a·s"
+        }
+      ]
+    }
+  ]
+}

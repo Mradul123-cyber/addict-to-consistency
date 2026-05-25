@@ -7,7 +7,7 @@ import {
   dailyMinutes28,
   todayMinutes,
 } from "@/lib/analytics";
-import { daysUntilExam, formatExamDate } from "@/lib/profile";
+import { DEFAULT_DAILY_GOAL_MINUTES, daysUntilExam, formatExamDate } from "@/lib/profile";
 import { useProfile } from "@/contexts/ProfileContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -33,11 +33,12 @@ function Dashboard() {
   const { profile, targetDate } = useProfile();
   const days = targetDate ? daysUntilExam(targetDate) : 0;
   const examLabel = profile ? formatExamDate(profile.targetYear) : "";
-  const cq = consistencyQuotient(sessions);
+  const dailyGoalMinutes = profile?.dailyGoalMinutes ?? DEFAULT_DAILY_GOAL_MINUTES;
+  const cq = consistencyQuotient(sessions, new Date(), dailyGoalMinutes);
   const today = todayMinutes(sessions);
   const history = dailyMinutes28(sessions);
-  const streak = currentStreak(sessions);
-  const best = bestStreak(sessions);
+  const streak = currentStreak(sessions, new Date(), dailyGoalMinutes);
+  const best = bestStreak(sessions, dailyGoalMinutes);
 
   // Subject-wise time breakdown
   const breakdown: Record<string, number> = {};
@@ -94,10 +95,12 @@ function Dashboard() {
           <CardContent>
             <div className="text-4xl font-semibold tabular-nums">{cq}%</div>
             <Progress value={cq} className="mt-2" />
-            <div className="mt-1 text-xs text-muted-foreground">≥150 min days, last 7</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              ≥{dailyGoalMinutes} min days, last 7
+            </div>
             {sessions.length === 0 && (
               <div className="mt-2 text-xs text-amber-600 dark:text-amber-500 font-medium">
-                Complete your first 150-min day to start your streak →
+                Complete your first {dailyGoalMinutes}-min day to start your streak →
               </div>
             )}
           </CardContent>
@@ -108,8 +111,10 @@ function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-semibold tabular-nums">{today}</div>
-            <Progress value={Math.min(100, (today / 150) * 100)} className="mt-2" />
-            <div className="mt-1 text-xs text-muted-foreground">minutes logged today</div>
+            <Progress value={Math.min(100, (today / dailyGoalMinutes) * 100)} className="mt-2" />
+            <div className="mt-1 text-xs text-muted-foreground">
+              minutes logged today · goal {dailyGoalMinutes}m
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -118,7 +123,9 @@ function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-semibold tabular-nums">{streak} {streak === 1 ? "day" : "days"}</div>
-            <div className="mt-1 text-xs text-muted-foreground">consecutive ≥150 min days</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              consecutive ≥{dailyGoalMinutes} min days
+            </div>
             <div className="mt-0.5 text-xs text-muted-foreground">Best: {best} {best === 1 ? "day" : "days"}</div>
           </CardContent>
         </Card>
@@ -130,7 +137,7 @@ function Dashboard() {
             <CardTitle className="text-base">28-day focus history</CardTitle>
           </CardHeader>
           <CardContent>
-            <HistoryChart data={history} />
+            <HistoryChart data={history} dailyGoalMinutes={dailyGoalMinutes} />
           </CardContent>
         </Card>
 

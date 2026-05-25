@@ -59,6 +59,10 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-formula: var(--formula);
+  --color-formula-foreground: var(--formula-foreground);
 }
 
 :root {
@@ -95,6 +99,10 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+  --brand: oklch(0.28 0.08 264);
+  --brand-foreground: oklch(0.99 0 0);
+  --formula: oklch(0.97 0.012 250);
+  --formula-foreground: oklch(0.2 0.03 265);
 }
 
 .dark {
@@ -130,6 +138,81 @@
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
+  --brand: oklch(0.97 0.005 250);
+  --brand-foreground: oklch(0.17 0.015 265);
+  --formula: oklch(0.23 0.02 265);
+  --formula-foreground: oklch(0.95 0.008 250);
+}
+
+/* Matrix notes vault — prototype palette (coral accent) */
+.matrix-notes {
+  --accent: oklch(0.62 0.18 28);
+  --accent-foreground: oklch(0.99 0 0);
+  --bookmark-highlight: oklch(0.74 0.2 55);
+  --ring: oklch(0.62 0.18 28);
+}
+
+.dark .matrix-notes {
+  --accent: oklch(0.7 0.18 35);
+  --accent-foreground: oklch(0.15 0.02 265);
+  --bookmark-highlight: oklch(0.8 0.19 58);
+  --ring: oklch(0.7 0.18 35);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
+
+@keyframes bookmark-flash {
+  0%,
+  100% {
+    border-color: var(--bookmark-highlight);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--bookmark-highlight) 0%, transparent);
+    transform: translateY(0);
+  }
+  18%,
+  58% {
+    background: color-mix(in oklch, var(--bookmark-highlight) 22%, var(--formula));
+    border-color: var(--bookmark-highlight);
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--bookmark-highlight) 28%, transparent);
+    transform: translateY(-1px);
+  }
+  38%,
+  78% {
+    background: var(--formula);
+    border-color: var(--bookmark-highlight);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--bookmark-highlight) 18%, transparent);
+    transform: translateY(0);
+  }
+}
+
+.animate-bookmark-flash {
+  animation: bookmark-flash 1.6s ease-in-out;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @layer base {

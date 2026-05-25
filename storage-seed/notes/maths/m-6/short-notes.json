@@ -1,0 +1,14 @@
+{
+  "sections": [
+    {
+      "title": "Limits",
+      "content": "The limit of a function describes the value it approaches as the input approaches a particular point, forming the foundation of calculus.",
+      "formulas": []
+    },
+    {
+      "title": "Derivatives",
+      "content": "The derivative measures the instantaneous rate of change of a function and equals the slope of the tangent line at a point.",
+      "formulas": []
+    }
+  ]
+}

@@ -18,7 +18,8 @@ export default defineConfig({
       VitePWA({
         registerType: "autoUpdate",
         devOptions: {
-          enabled: true,
+          // TanStack dev server has no root index.html — precache 404s without this.
+          enabled: false,
         },
         includeAssets: ["favicon.ico"],
         manifest: {

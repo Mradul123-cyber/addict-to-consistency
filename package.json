@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "notes:seed-files": "bun run scripts/generate-notes-storage-seed.ts",
+    "notes:upload": "gcloud storage cp --recursive storage-seed/notes gs://matrix-jee-workstation.firebasestorage.app/"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

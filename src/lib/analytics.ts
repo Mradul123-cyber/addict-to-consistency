@@ -1,6 +1,7 @@
 import type { SessionLog } from "./store";
+import { DEFAULT_DAILY_GOAL_MINUTES } from "./profile";
 
-export const DAILY_THRESHOLD_MIN = 150;
+export const DAILY_THRESHOLD_MIN = DEFAULT_DAILY_GOAL_MINUTES;
 
 export function isoDay(d: Date): string {
   const y = d.getFullYear();
@@ -17,14 +18,18 @@ export function minutesByDay(sessions: SessionLog[]): Record<string, number> {
   return map;
 }
 
-export function consistencyQuotient(sessions: SessionLog[], now = new Date()): number {
+export function consistencyQuotient(
+  sessions: SessionLog[],
+  now = new Date(),
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+): number {
   const byDay = minutesByDay(sessions);
   let hits = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
     const key = isoDay(d);
-    if ((byDay[key] ?? 0) >= DAILY_THRESHOLD_MIN) hits++;
+    if ((byDay[key] ?? 0) >= dailyGoalMinutes) hits++;
   }
   return Math.round((hits / 7) * 100);
 }
@@ -46,7 +51,11 @@ export function todayMinutes(sessions: SessionLog[], now = new Date()): number {
   return minutesByDay(sessions)[key] ?? 0;
 }
 
-export function currentStreak(sessions: SessionLog[], now = new Date()): number {
+export function currentStreak(
+  sessions: SessionLog[],
+  now = new Date(),
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+): number {
   const byDay = minutesByDay(sessions);
   const todayKey = isoDay(now);
   const todayMins = byDay[todayKey] ?? 0;
@@ -54,7 +63,7 @@ export function currentStreak(sessions: SessionLog[], now = new Date()): number 
   let streak = 0;
   let startOffset = 0;
 
-  if (todayMins >= DAILY_THRESHOLD_MIN) {
+  if (todayMins >= dailyGoalMinutes) {
     startOffset = 0;
   } else {
     const yesterday = new Date(now);
@@ -62,7 +71,7 @@ export function currentStreak(sessions: SessionLog[], now = new Date()): number 
     const yesterdayKey = isoDay(yesterday);
     const yesterdayMins = byDay[yesterdayKey] ?? 0;
 
-    if (yesterdayMins >= DAILY_THRESHOLD_MIN) {
+    if (yesterdayMins >= dailyGoalMinutes) {
       startOffset = 1;
     } else {
       return 0;
@@ -74,7 +83,7 @@ export function currentStreak(sessions: SessionLog[], now = new Date()): number 
     const d = new Date(now);
     d.setDate(d.getDate() - offset);
     const key = isoDay(d);
-    if ((byDay[key] ?? 0) >= DAILY_THRESHOLD_MIN) {
+    if ((byDay[key] ?? 0) >= dailyGoalMinutes) {
       streak++;
       offset++;
     } else {
@@ -84,14 +93,21 @@ export function currentStreak(sessions: SessionLog[], now = new Date()): number 
   return streak;
 }
 
-function dayMeetsThreshold(byDay: Record<string, number>, key: string): boolean {
-  return (byDay[key] ?? 0) >= DAILY_THRESHOLD_MIN;
+function dayMeetsThreshold(
+  byDay: Record<string, number>,
+  key: string,
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+): boolean {
+  return (byDay[key] ?? 0) >= dailyGoalMinutes;
 }
 
-export function bestStreak(sessions: SessionLog[]): number {
+export function bestStreak(
+  sessions: SessionLog[],
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+): number {
   const byDay = minutesByDay(sessions);
   const qualifyingDays = Object.keys(byDay)
-    .filter((key) => dayMeetsThreshold(byDay, key))
+    .filter((key) => dayMeetsThreshold(byDay, key, dailyGoalMinutes))
     .sort();
 
   if (qualifyingDays.length === 0) return 0;

@@ -4,15 +4,18 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 
 import appCss from "../styles.css?url";
 import { AppNav } from "@/components/AppNav";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/AuthGate";
 import { ProfileProvider } from "@/contexts/ProfileContext";
+import { NotesChromeProvider } from "@/contexts/NotesChromeContext";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -128,6 +131,9 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const isNotesRoute = useRouterState({
+    select: (s) => s.location.pathname.startsWith("/notes"),
+  });
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -135,12 +141,21 @@ function RootComponent() {
         <AuthGate>
           <ProfileProvider>
             <OnboardingGate>
-              <div className="min-h-screen bg-background text-foreground">
-                <AppNav />
-                <main className="mx-auto max-w-6xl px-4 py-8">
-                  <Outlet />
-                </main>
-              </div>
+              <NotesChromeProvider>
+                <div className="flex min-h-screen flex-col bg-background text-foreground">
+                  <AppNav />
+                  <main
+                  className={cn(
+                    "min-h-0 flex-1",
+                    isNotesRoute
+                      ? "flex flex-col max-w-none p-0"
+                      : "mx-auto w-full max-w-6xl px-4 py-8",
+                  )}
+                >
+                    <Outlet />
+                  </main>
+                </div>
+              </NotesChromeProvider>
             </OnboardingGate>
           </ProfileProvider>
         </AuthGate>

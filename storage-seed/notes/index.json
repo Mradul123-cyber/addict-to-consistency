@@ -1,0 +1,48 @@
+{
+  "physics": {
+    "phy-1": {
+      "hasNotes": false,
+      "hasFormulas": true
+    },
+    "phy-2": {
+      "hasNotes": true,
+      "hasFormulas": true
+    },
+    "phy-5": {
+      "hasNotes": true,
+      "hasFormulas": true
+    }
+  },
+  "pchem": {
+    "pc-3": {
+      "hasNotes": true,
+      "hasFormulas": true
+    },
+    "pc-7": {
+      "hasNotes": true,
+      "hasFormulas": true
+    }
+  },
+  "ochem": {
+    "oc-1": {
+      "hasNotes": true,
+      "hasFormulas": false
+    }
+  },
+  "ichem": {
+    "ic-2": {
+      "hasNotes": true,
+      "hasFormulas": false
+    },
+    "ic-3": {
+      "hasNotes": false,
+      "hasFormulas": true
+    }
+  },
+  "maths": {
+    "m-6": {
+      "hasNotes": true,
+      "hasFormulas": true
+    }
+  }
+}
