@@ -6,7 +6,10 @@
       "http://127.0.0.1:8080",
       "http://127.0.0.1:5173",
       "https://matrix-jee-workstation.web.app",
-      "https://matrix-jee-workstation.firebaseapp.com"
+      "https://matrix-jee-workstation.firebaseapp.com",
+      "https://addict-to-consistency.lovable.app",
+      "https://id-preview--2652d5d1-0892-4188-a1eb-eeaed7a35689.lovable.app",
+      "https://2652d5d1-0892-4188-a1eb-eeaed7a35689.lovableproject.com"
     ],
     "method": ["GET", "HEAD"],
     "responseHeader": [
