@@ -31,3 +31,5 @@ dist-ssr
 *.sln
 *.sw?
 .cursor/
+storage.cors.json
+storage.cors.json
