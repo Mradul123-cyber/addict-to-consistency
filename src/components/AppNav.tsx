@@ -44,6 +44,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Bookmark, Download, LogOut, Menu, Moon, Sun, Target, X } from "lucide-react";
+import { isInstalledPwa, subscribePwaInstall, triggerInstallPrompt } from "@/lib/pwa-install";
 
 /** Chromium PWA install prompt (not available on iOS Safari). */
 interface BeforeInstallPromptEvent extends Event {
@@ -107,13 +108,13 @@ export function AppNav() {
   const desktopInstallFallbackMessage =
     "If no install dialog appeared: in Chrome or Edge, open the menu (⋮) or look for an install icon in the address bar, then choose \"Install\" or \"Install Matrix\".";
 
-  useEffect(() => {
-    const sync = () => {
-      setIsInstalled(isInstalledPwa());
-    };
-    sync();
-    return subscribePwaInstall(sync);
-  }, []);
+    useEffect(() => {
+      const sync = () => {
+        setIsInstalled(isInstalledPwa());
+      };
+      sync();
+      return subscribePwaInstall(sync);
+    }, []);
 
   const handleInstallClick = async () => {
     if (isIOSDevice()) {
