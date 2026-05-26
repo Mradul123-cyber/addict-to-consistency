@@ -22,16 +22,19 @@ export function consistencyQuotient(
   sessions: SessionLog[],
   now = new Date(),
   dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
-): number {
+): number | null {
   const byDay = minutesByDay(sessions);
+  const uniqueDays = Object.keys(byDay).length;
+  if (uniqueDays < 3) return null;
+  const window = Math.max(3, Math.min(7, uniqueDays));
   let hits = 0;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < window; i++) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
     const key = isoDay(d);
     if ((byDay[key] ?? 0) >= dailyGoalMinutes) hits++;
   }
-  return Math.round((hits / 7) * 100);
+  return Math.round((hits / window) * 100);
 }
 
 export function dailyMinutes28(sessions: SessionLog[], now = new Date()) {
@@ -149,11 +152,15 @@ export function weeklyDigest(
 ): WeeklyDigest {
   const byDay = minutesByDay(sessions);
 
-  // Build ordered list of ISO-day strings: 6 days ago → today
+  const dayOfWeek = now.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayOffset);
+
   const days: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
     days.push(isoDay(d));
   }
 

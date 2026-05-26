@@ -135,15 +135,7 @@ export function OnboardingModal() {
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const { profile, loading } = useProfile();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!profile) {
+  if (!loading && !profile) {
     return <OnboardingModal />;
   }
 

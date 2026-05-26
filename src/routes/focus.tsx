@@ -21,7 +21,7 @@ function FocusPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Deep focus</h1>
         <p className="text-sm text-muted-foreground">
-          Pick a chapter, choose a duration, then disappear into the work.
+          Pick a task, choose a duration, then disappear into the work.
         </p>
       </div>
       <FocusTimer />

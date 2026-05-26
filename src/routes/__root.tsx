@@ -137,6 +137,7 @@ function RootComponent() {
   const isNotesRoute = useRouterState({
     select: (s) => s.location.pathname.startsWith("/notes"),
   });
+  const isNavigating = useRouterState({ select: (s) => s.status === "pending" });
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -161,7 +162,9 @@ function RootComponent() {
                       : "mx-auto w-full max-w-6xl px-4 py-8",
                   )}
                 >
-                    <Outlet />
+                    <div className={isNavigating ? "invisible" : ""}>
+                      <Outlet />
+                    </div>
                   </main>
                 </div>
               </NotesChromeProvider>

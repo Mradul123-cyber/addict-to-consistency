@@ -60,18 +60,19 @@ export interface SessionLog {
 
 let tracks: Track[] = [];
 let sessions: SessionLog[] = [];
+let customTasks: string[] = [];
 
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
 }
 
-let cachedSnap = { tracks: [] as Track[], sessions: [] as SessionLog[] };
+let cachedSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[] };
 function getSnapshot() {
   return cachedSnap;
 }
 function refreshSnap() {
-  cachedSnap = { tracks, sessions };
+  cachedSnap = { tracks, sessions, customTasks };
 }
 
 function subscribe(cb: () => void) {
@@ -81,14 +82,52 @@ function subscribe(cb: () => void) {
   };
 }
 
-const serverSnap = { tracks: [] as Track[], sessions: [] as SessionLog[] };
+const serverSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[] };
 
 let currentSubscriptionUid: string | null = null;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeTracks: (() => void) | null = null;
 
+const CACHE_PREFIX = "store_cache_";
+
+function loadCachedData(uid: string) {
+  try {
+    const cachedSessions = localStorage.getItem(`${CACHE_PREFIX}${uid}_sessions`);
+    const cachedTracks = localStorage.getItem(`${CACHE_PREFIX}${uid}_tracks`);
+    const cachedTasks = localStorage.getItem(`${CACHE_PREFIX}${uid}_customTasks`);
+    if (cachedSessions) sessions = JSON.parse(cachedSessions);
+    if (cachedTracks) tracks = JSON.parse(cachedTracks);
+    if (cachedTasks) customTasks = JSON.parse(cachedTasks);
+  } catch {
+    // ignore
+  }
+}
+
+function saveCache(uid: string) {
+  try {
+    localStorage.setItem(`${CACHE_PREFIX}${uid}_sessions`, JSON.stringify(sessions));
+    localStorage.setItem(`${CACHE_PREFIX}${uid}_tracks`, JSON.stringify(tracks));
+    localStorage.setItem(`${CACHE_PREFIX}${uid}_customTasks`, JSON.stringify(customTasks));
+  } catch {
+    // localStorage full or unavailable
+  }
+}
+
+function clearCache(uid: string) {
+  try {
+    localStorage.removeItem(`${CACHE_PREFIX}${uid}_sessions`);
+    localStorage.removeItem(`${CACHE_PREFIX}${uid}_tracks`);
+    localStorage.removeItem(`${CACHE_PREFIX}${uid}_customTasks`);
+  } catch {
+    // ignore
+  }
+}
+
 function syncSubscription(uid: string | null, onStoreChange: () => void) {
   if (currentSubscriptionUid === uid) return;
+
+  const previousUid = currentSubscriptionUid;
+  currentSubscriptionUid = uid;
 
   // Cleanup old subscription
   if (unsubscribeSessions) {
@@ -100,15 +139,20 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
     unsubscribeTracks = null;
   }
 
-  currentSubscriptionUid = uid;
-
   if (!uid) {
+    if (previousUid) clearCache(previousUid);
     tracks = [];
     sessions = [];
+    customTasks = [];
     refreshSnap();
     onStoreChange();
     return;
   }
+
+  // Load cached data immediately so UI renders without waiting for Firestore
+  loadCachedData(uid);
+  refreshSnap();
+  onStoreChange();
 
   // Subscribe to sessions collection
   const sessionsCol = collection(db, "users", uid, "sessions");
@@ -131,6 +175,7 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
       });
       refreshSnap();
       onStoreChange();
+      saveCache(uid);
     },
     (err) => {
       console.error("Error listening to sessions:", err);
@@ -150,8 +195,10 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
         }
       } else {
         tracks = snapshot.data().tracks || [];
+        customTasks = snapshot.data().customTasks || [];
         refreshSnap();
         onStoreChange();
+        saveCache(uid);
       }
     },
     (err) => {
@@ -259,6 +306,22 @@ export async function deleteSession(id: string) {
     await deleteDoc(doc(db, "users", uid, "sessions", id));
   } catch (err) {
     console.error("Error deleting session:", err);
+  }
+}
+
+export async function addCustomTask(name: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const trimmed = name.trim();
+    if (!trimmed || customTasks.includes(trimmed)) return;
+
+    customTasks.push(trimmed);
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { customTasks }, { merge: true });
+  } catch (err) {
+    console.error("Error adding custom task:", err);
   }
 }
 
