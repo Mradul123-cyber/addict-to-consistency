@@ -65,6 +65,37 @@
         color: var(--text);
       }
 
+      .tabs {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .tab-btn {
+        flex: 1;
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .tab-btn.active {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .tab-content {
+        display: none;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -104,44 +135,86 @@
     <main>
       <h1>Install JEE Airgap Shield</h1>
       <p>
-        The Airgap toggle works through the Chrome extension in this repo. Load the extension
-        once, then refresh the dashboard tab.
+        Load the extension once, then refresh the dashboard tab. Extensions are loaded temporarily
+        and last until you close the browser.
       </p>
-      <ol>
-        <li>
-          Click "Download Extension (.zip)" above, unzip it — you'll get a single extension
-          folder ready to load.
-        </li>
-        <li>
-          Click "Open chrome://extensions" above — or type it manually in your address bar.
-        </li>
-        <li>Toggle Developer mode ON (top-right switch on that page).</li>
-        <li>
-          Click Load unpacked → navigate into the unzipped folder → open the
-          <code>extension</code> subfolder inside it.
-        </li>
-        <li>Return here and refresh — the Airgap Shield will activate automatically.</li>
-      </ol>
-      <p class="note">
-        Only works on Chrome or Chromium-based browsers (Brave, Edge). Not supported on Firefox
-        or Safari.
-      </p>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="chrome" onclick="switchTab('chrome')">Chrome</button>
+        <button class="tab-btn" data-tab="firefox" onclick="switchTab('firefox')">Firefox</button>
+      </div>
+
+      <div id="tab-chrome" class="tab-content active">
+        <ol>
+          <li>Click "Download Extension (.zip)" below, unzip it.</li>
+          <li>Open <code>chrome://extensions</code> in your address bar.</li>
+          <li>Toggle <strong>Developer mode</strong> ON (top-right).</li>
+          <li>Click <strong>Load unpacked</strong> → select the <code>extension</code> folder.</li>
+          <li>Return here and refresh the dashboard.</li>
+        </ol>
+      </div>
+
+      <div id="tab-firefox" class="tab-content">
+        <ol>
+          <li>Click "Download Extension (.zip)" below, unzip it.</li>
+          <li>Open <code>about:debugging#/runtime/this-firefox</code> in your address bar.</li>
+          <li>Click <strong>Load Temporary Add-on</strong> → navigate into the <code>extension/firefox</code> folder → select any file.</li>
+          <li>Return here and refresh the dashboard.</li>
+        </ol>
+        <p class="note">
+          Temporary add-ons last only until Firefox is closed. For permanent installation, submit to the Firefox Add-ons store.
+        </p>
+      </div>
+
       <div class="actions">
         <a
+          id="download-link"
           class="button button-primary"
           href="https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension"
           target="_blank"
           rel="noreferrer"
         >
-          Download Extension (.zip)
+          Download Chrome Extension (.zip)
         </a>
-        <a class="button button-secondary" href="chrome://extensions">
+        <a class="button button-secondary" href="chrome://extensions" id="chrome-link">
           Open chrome://extensions
+        </a>
+        <a class="button button-secondary" href="about:debugging#/runtime/this-firefox" id="firefox-link" style="display:none">
+          Open about:debugging
         </a>
         <a class="button button-secondary" href="https://addict-to-consistency.lovable.app/">
           Back to Dashboard
         </a>
       </div>
     </main>
+
+    <script>
+      var CHROME_DOWNLOAD = "https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension";
+      var FIREFOX_DOWNLOAD = "https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension/firefox";
+
+      function switchTab(browser) {
+        document.querySelectorAll(".tab-btn").forEach(function(btn) {
+          btn.classList.remove("active");
+        });
+        document.querySelector('.tab-btn[data-tab="' + browser + '"]').classList.add("active");
+
+        document.querySelectorAll(".tab-content").forEach(function(tab) {
+          tab.classList.remove("active");
+        });
+        document.getElementById("tab-" + browser).classList.add("active");
+
+        document.getElementById("chrome-link").style.display = browser === "chrome" ? "inline-flex" : "none";
+        document.getElementById("firefox-link").style.display = browser === "firefox" ? "inline-flex" : "none";
+
+        var link = document.getElementById("download-link");
+        if (browser === "firefox") {
+          link.href = FIREFOX_DOWNLOAD;
+          link.textContent = "Download Firefox Extension (.zip)";
+        } else {
+          link.href = CHROME_DOWNLOAD;
+          link.textContent = "Download Chrome Extension (.zip)";
+        }
+      }
+    </script>
   </body>
 </html>

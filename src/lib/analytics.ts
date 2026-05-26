@@ -130,3 +130,45 @@ export function bestStreak(
 
   return best;
 }
+
+export interface WeeklyDigest {
+  totalMinutes: number;
+  daysHit: number;
+  daysMissed: number;
+  /** null when no session in the week has a focusRating */
+  avgRating: number | null;
+  sessionCount: number;
+  /** Sessions that fall within the last 7 days (today inclusive) */
+  weekSessions: SessionLog[];
+}
+
+export function weeklyDigest(
+  sessions: SessionLog[],
+  now = new Date(),
+  dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+): WeeklyDigest {
+  const byDay = minutesByDay(sessions);
+
+  // Build ordered list of ISO-day strings: 6 days ago → today
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    days.push(isoDay(d));
+  }
+
+  const daySet = new Set(days);
+  const weekSessions = sessions.filter((s) => s.dateISO && daySet.has(s.dateISO));
+
+  const totalMinutes = days.reduce((sum, d) => sum + (byDay[d] ?? 0), 0);
+  const daysHit = days.filter((d) => (byDay[d] ?? 0) >= dailyGoalMinutes).length;
+  const daysMissed = 7 - daysHit;
+
+  const ratedSessions = weekSessions.filter((s) => s.focusRating != null);
+  const avgRating =
+    ratedSessions.length > 0
+      ? ratedSessions.reduce((sum, s) => sum + (s.focusRating ?? 0), 0) / ratedSessions.length
+      : null;
+
+  return { totalMinutes, daysHit, daysMissed, avgRating, sessionCount: weekSessions.length, weekSessions };
+}

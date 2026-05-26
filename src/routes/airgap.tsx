@@ -174,7 +174,7 @@ function AirgapPage() {
             <div>
               <CardTitle className="text-base">Extension Control</CardTitle>
               <CardDescription>
-                Keep the Chrome extension installed to enforce your saved rules in real time.
+                Load the extension temporarily in Chrome or Firefox to enforce your saved rules in real time. See install instructions below.
               </CardDescription>
             </div>
             <Badge variant={isExtensionReady ? (isOn ? "default" : "outline") : "secondary"}>
