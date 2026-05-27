@@ -48,10 +48,10 @@ function getCustomInfo(value: string, mode: PomodoroMode): { minutes: number; er
   return { minutes: parsed, error: null };
 }
 
-export function FocusTimer() {
+export function FocusTimer({ initialChapterId }: { initialChapterId?: string | null }) {
   const { tracks } = useStore();
+  const [chapterId, setChapterId] = useState<string | null>(initialChapterId ?? null);
   const { healthySites, blocklist, startFocusTracking, endFocusTracking } = useAirgap();
-  const [chapterId, setChapterId] = useState<string | null>(null);
   const [mode, setMode] = useState<PomodoroMode>("focus");
   const [duration, setDuration] = useState<number>(MODE_CONFIG.focus.defaultMinutes);
   const [isCustomDuration, setIsCustomDuration] = useState(false);
@@ -83,12 +83,14 @@ export function FocusTimer() {
   const totalSecondsRef = useRef<number>(45 * 60);
 
 
+  const MODE_KEY = "focusSession_mode";
   const SESSION_KEY = "focusSession_active";
   const STARTED_AT_KEY = "focusSession_startedAt";
   const DURATION_KEY = "focusSession_duration";
   const CHAPTER_KEY = "focusSession_chapterId";
 
   const clearPersistedSession = useCallback(() => {
+    localStorage.removeItem(MODE_KEY);
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(STARTED_AT_KEY);
     localStorage.removeItem(DURATION_KEY);
@@ -136,6 +138,7 @@ export function FocusTimer() {
       totalSecondsRef.current = total;
       startedAtRef.current = Date.now();
       setRemaining(total);
+      localStorage.setItem(MODE_KEY, mode);
       localStorage.setItem(SESSION_KEY, "true");
       localStorage.setItem(STARTED_AT_KEY, String(startedAtRef.current));
       localStorage.setItem(DURATION_KEY, String(total));
@@ -160,6 +163,12 @@ export function FocusTimer() {
   }, [running, effectiveDuration, finishFocusSession, chapterId, SESSION_KEY, STARTED_AT_KEY, DURATION_KEY, CHAPTER_KEY]);
 
   useEffect(() => {
+    const savedMode = localStorage.getItem(MODE_KEY) as PomodoroMode | null;
+    if (savedMode && savedMode !== "focus") {
+      setMode(savedMode);
+      setDuration(MODE_CONFIG[savedMode].defaultMinutes);
+      setCustomMinutes(String(MODE_CONFIG[savedMode].defaultMinutes));
+    }
     if (localStorage.getItem(SESSION_KEY) === "true") {
       const savedStartedAt = Number(localStorage.getItem(STARTED_AT_KEY));
       const savedDuration = Number(localStorage.getItem(DURATION_KEY));
@@ -173,16 +182,16 @@ export function FocusTimer() {
           setRemaining(left);
           setRunning(true);
           setChapterId(savedChapterId);
-          trackingActiveRef.current = true;
+          if (savedMode === "focus") trackingActiveRef.current = true;
         } else {
           clearPersistedSession();
           setChapterId(savedChapterId);
           setRemaining(0);
-          void finishFocusSession(true);
+          void finishFocusSession(savedMode === "focus");
         }
       }
     }
-  }, [SESSION_KEY, STARTED_AT_KEY, DURATION_KEY, CHAPTER_KEY, clearPersistedSession, finishFocusSession]);
+  }, [MODE_KEY, SESSION_KEY, STARTED_AT_KEY, DURATION_KEY, CHAPTER_KEY, clearPersistedSession, finishFocusSession]);
 
   useEffect(() => {
     if (!running) return;
@@ -219,8 +228,10 @@ export function FocusTimer() {
     setRemaining(effectiveDuration * 60);
     setRunning(true);
     setDriftSummary(null);
-    trackingActiveRef.current = true;
-    void startFocusTracking(healthySites, blocklist);
+    if (mode === "focus") {
+      trackingActiveRef.current = true;
+      void startFocusTracking(healthySites, blocklist);
+    }
 
     const sel = getLastSelection();
     if (sel.kind !== "off") {
@@ -274,7 +285,7 @@ export function FocusTimer() {
         )}
       </div>
 
-      <div className="flex rounded-lg border bg-card p-1">
+      <div className="flex rounded-lg bg-card p-1 gap-1">
         {(Object.entries(MODE_CONFIG) as [PomodoroMode, typeof MODE_CONFIG["focus"]][]).map(([key, cfg]) => (
           <button
             key={key}
@@ -284,12 +295,18 @@ export function FocusTimer() {
               setCustomMinutes(String(cfg.defaultMinutes));
               setIsCustomDuration(false);
             }}
-            className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-all ${
+            className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-all duration-300 ease-out border-2 border-black/30 dark:border-white/30 hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-lg ${
               mode === key
                 ? "text-white shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
             style={mode === key ? { backgroundColor: cfg.color } : undefined}
+            onMouseEnter={(e) => {
+              if (mode !== key) e.currentTarget.style.backgroundColor = `${cfg.color}20`;
+            }}
+            onMouseLeave={(e) => {
+              if (mode !== key) e.currentTarget.style.backgroundColor = "";
+            }}
             disabled={running}
           >
             {cfg.label}
@@ -353,7 +370,7 @@ export function FocusTimer() {
         </div>
         <div className="mt-6 flex justify-center gap-2">
           {!running ? (
-            <Button onClick={start}>Start {mode === "focus" ? "Focus" : "Break"}</Button>
+            <Button onClick={start} className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">Start {mode === "focus" ? "Focus" : "Break"}</Button>
           ) : (
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setFullscreen(true)}>

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@/lib/store";
 import {
   bestStreak,
@@ -16,7 +16,8 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { MonthlyCalendar } from "@/components/MonthlyCalendar";
+import { StudyCalendar } from "@/components/StudyCalendar";
+import { TaskPanel } from "@/components/TaskPanel";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ChevronDown,
@@ -255,7 +256,8 @@ function WeeklyDigestCard({
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard() {
-  const { sessions, tracks } = useStore();
+  const navigate = useNavigate();
+  const { sessions, tracks, calendarTasks } = useStore();
   const { profile, targetDate } = useProfile();
   const days = targetDate ? daysUntilExam(targetDate) : 0;
   const examLabel = profile ? formatExamDate(profile.targetYear) : "";
@@ -279,6 +281,10 @@ function Dashboard() {
   );
 
   // Subject-wise time breakdown (all-time)
+  const SUBJECT_TO_TRACK: Record<string, string> = {
+    PHY: "Physics", PCM: "Physical Chemistry", ORG: "Organic Chemistry",
+    ICM: "Inorganic Chemistry", MTH: "Mathematics",
+  };
   const breakdown: Record<string, number> = {};
   for (const t of tracks) {
     breakdown[t.name] = 0;
@@ -294,6 +300,8 @@ function Dashboard() {
       if (foundTrack) {
         trackName = foundTrack.name;
       }
+    } else if (s.subject) {
+      trackName = SUBJECT_TO_TRACK[s.subject] ?? "Uncategorized";
     }
     breakdown[trackName] = (breakdown[trackName] ?? 0) + s.minutes;
   }
@@ -328,7 +336,7 @@ function Dashboard() {
               <span className="ml-0.5 flex h-1.5 w-1.5 rounded-full bg-indigo-500" />
             )}
           </Button>
-          <Button asChild>
+          <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
             <Link to="/focus">Start focus session</Link>
           </Button>
         </div>
@@ -347,7 +355,7 @@ function Dashboard() {
       )}
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="transition-all duration-300 ease-out hover:-translate-y-2 hover:scale-[1.02] hover:shadow-2xl hover:bg-amber-50 dark:hover:bg-[#FFA000]/35">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">JEE Countdown</CardTitle>
           </CardHeader>
@@ -356,7 +364,7 @@ function Dashboard() {
             <div className="text-xs text-muted-foreground">days until {examLabel}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="transition-all duration-300 ease-out hover:-translate-y-2 hover:scale-[1.02] hover:shadow-2xl hover:bg-amber-50 dark:hover:bg-[#FFA000]/35">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Current Streak</CardTitle>
           </CardHeader>
@@ -377,7 +385,7 @@ function Dashboard() {
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="transition-all duration-300 ease-out hover:-translate-y-2 hover:scale-[1.02] hover:shadow-2xl hover:bg-amber-50 dark:hover:bg-[#FFA000]/35">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Today</CardTitle>
           </CardHeader>
@@ -389,7 +397,7 @@ function Dashboard() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="transition-all duration-300 ease-out hover:-translate-y-2 hover:scale-[1.02] hover:shadow-2xl hover:bg-amber-50 dark:hover:bg-[#FFA000]/35">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
               Consistency Quotient
@@ -424,20 +432,28 @@ function Dashboard() {
 
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-2">
-          <MonthlyCalendar sessions={sessions} tracks={tracks} dailyGoalMinutes={dailyGoalMinutes} />
+          <StudyCalendar sessions={sessions} tracks={tracks} dailyGoalMinutes={dailyGoalMinutes} />
         </div>
 
-        <Card>
+        <div className="space-y-6">
+          <Card className="h-fit">
           <CardHeader>
             <CardTitle className="text-base">Subject distribution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
               {Object.entries(breakdown).map(([subject, mins]) => {
+                const isUncategorized = subject === "Uncategorized";
                 const percent = totalMinutes > 0 ? (mins / totalMinutes) * 100 : 0;
                 return (
                   <div key={subject} className="space-y-1">
-                    <div className="flex justify-between text-xs">
+                    <div
+                      className={`flex justify-between text-xs ${isUncategorized ? "" : "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.01] hover:text-primary"}`}
+                      onClick={() => {
+                        if (isUncategorized) return;
+                        navigate({ to: "/focus", search: { subject } });
+                      }}
+                    >
                       <span className="font-medium text-foreground">{subject}</span>
                       <span className="text-muted-foreground tabular-nums">{mins}m</span>
                     </div>
@@ -458,6 +474,9 @@ function Dashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <TaskPanel />
+        </div>
       </div>
     </div>
   );

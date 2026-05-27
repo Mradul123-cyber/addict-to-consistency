@@ -101,6 +101,18 @@ export function AppNav() {
   const [customGoalOpen, setCustomGoalOpen] = useState(false);
   const [customGoalValue, setCustomGoalValue] = useState("");
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const [taskNotif, setTaskNotif] = useState<string[]>(() => {
+    try {
+      const tasks = JSON.parse(localStorage.getItem("calendar-tasks") ?? "{}");
+      return (tasks[todayStr] ?? []).filter((t: any) => !t.done).map((t: any) => t.text);
+    } catch { return []; }
+  });
+  const [showTaskNotif, setShowTaskNotif] = useState(() => {
+    return localStorage.getItem("taskNotifMutedDate") !== todayStr;
+  });
+  const [lockedHovered, setLockedHovered] = useState(false);
 
   const iosInstallMessage =
     "Tap the Share icon in Safari (square with arrow), then choose \"Add to Home Screen\" to install Matrix on your home screen.";
@@ -164,11 +176,8 @@ export function AppNav() {
     const minutes = Number(value);
     if (!Number.isFinite(minutes) || minutes === dailyGoalMinutes) return;
     if (!goalCanChange) {
-      toast.warning("Daily goal is locked", {
-        description: nextGoalChangeLabel
-          ? `You can change it again on ${nextGoalChangeLabel}.`
-          : "You can change it once every 30 days.",
-      });
+      setLockedHovered(true);
+      setTimeout(() => setLockedHovered(false), 500);
       return;
     }
 
@@ -218,6 +227,40 @@ export function AppNav() {
 
   return (
     <header className="border-b bg-card">
+      {showTaskNotif && taskNotif.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-foreground/30 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card ring-1 ring-border/80 rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <div className="flex items-start gap-4 mb-5">
+              <img src="/icons/bell.png.png" alt="" className="h-12 w-12 shrink-0" />
+              <div className="min-w-0 flex-1 pt-0.5">
+                <p className="text-base font-bold text-foreground">Today's Tasks</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {taskNotif.length} task{taskNotif.length !== 1 ? "s" : ""} scheduled for today
+                </p>
+              </div>
+            </div>
+            <ul className={`space-y-3 mb-6 ${taskNotif.length === 1 ? "text-center" : ""}`}>
+              {taskNotif.map((t, i) => (
+                <li key={i} className="text-base font-bold text-foreground leading-snug"><span className="mr-2.5 text-foreground">•</span>{t}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setShowTaskNotif(false)}
+                className="w-full py-2.5 rounded-md text-sm font-semibold bg-foreground text-background hover:opacity-90 transition-opacity"
+              >
+                Got it
+              </button>
+              <button
+                onClick={() => { localStorage.setItem("taskNotifMutedDate", todayStr); setShowTaskNotif(false); }}
+                className="w-full py-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Mute for today
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 md:gap-4">
         {/* Left: brand + desktop nav + mobile menu toggle */}
         <div className="flex min-w-0 items-center gap-2 md:gap-6">
@@ -383,7 +426,7 @@ export function AppNav() {
                     </span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="w-48">
-                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    <DropdownMenuLabel className={`text-xs font-normal transition-colors ${lockedHovered ? "text-red-500 animate-shake" : "text-muted-foreground"}`}>
                       {goalCanChange
                         ? "Choose your daily goal"
                         : `Locked until ${nextGoalChangeLabel ?? "30 days pass"}`}
@@ -398,8 +441,16 @@ export function AppNav() {
                         <DropdownMenuRadioItem
                           key={minutes}
                           value={String(minutes)}
-                          disabled={!goalCanChange && minutes !== dailyGoalMinutes}
-                          className="cursor-pointer"
+                          className={`cursor-pointer ${!goalCanChange && minutes !== dailyGoalMinutes ? "opacity-50" : ""}`}
+                          onSelect={(e) => {
+                            if (!goalCanChange && minutes !== dailyGoalMinutes) {
+                              e.preventDefault();
+                              setLockedHovered(true);
+                              setTimeout(() => setLockedHovered(false), 500);
+                            }
+                          }}
+                          onMouseEnter={() => { if (!goalCanChange && minutes !== dailyGoalMinutes) setLockedHovered(true); }}
+                          onMouseLeave={() => setLockedHovered(false)}
                         >
                           {minutes} minutes
                         </DropdownMenuRadioItem>
@@ -407,12 +458,18 @@ export function AppNav() {
                     </DropdownMenuRadioGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      className="cursor-pointer"
-                      disabled={!goalCanChange}
+                      className={`cursor-pointer ${!goalCanChange ? "opacity-50" : ""}`}
                       onSelect={(e) => {
+                        if (!goalCanChange) {
+                          setLockedHovered(true);
+                          setTimeout(() => setLockedHovered(false), 500);
+                          return;
+                        }
                         e.preventDefault();
                         openCustomGoalDialog();
                       }}
+                      onMouseEnter={() => { if (!goalCanChange) setLockedHovered(true); }}
+                      onMouseLeave={() => setLockedHovered(false)}
                     >
                       Custom minutes
                     </DropdownMenuItem>

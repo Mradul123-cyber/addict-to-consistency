@@ -17,12 +17,38 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type Priority = "High" | "Medium" | "Low";
 
+export type ConceptWeight = "High" | "Medium" | "Low";
+
+const WEIGHT_VALUE: Record<ConceptWeight, number> = { High: 3, Medium: 2, Low: 1 };
+
+export interface Concept {
+  id: string;
+  name: string;
+  done: boolean;
+  weight: ConceptWeight;
+}
+
+/** Weighted completion: sum(weight of done) / sum(all weights) × 100 */
+export function calcWeightedCompletion(concepts: Concept[]): number {
+  if (concepts.length === 0) return 0;
+  const total = concepts.reduce((s, c) => s + WEIGHT_VALUE[c.weight ?? "Medium"], 0);
+  const done = concepts.filter((c) => c.done).reduce((s, c) => s + WEIGHT_VALUE[c.weight ?? "Medium"], 0);
+  return Math.round((done / total) * 100);
+}
+
+export interface ChapterOverride {
+  delta: number;
+  note?: string;
+}
+
 export interface Chapter {
   id: string;
   trackId: string;
   name: string;
   priority: Priority;
   completion: number;
+  concepts?: Concept[];
+  overrides?: ChapterOverride[];
 }
 
 export interface Track {
@@ -47,32 +73,43 @@ export interface DriftSummary {
   topDomains: DriftDomainVisit[];
 }
 
+export interface CalendarTask {
+  id: string;
+  dateISO: string;
+  text: string;
+  subject: string;
+  done: boolean;
+  createdAt: number;
+}
+
 export interface SessionLog {
   id: string;
   chapterId: string | null;
   dateISO: string; // YYYY-MM-DD
   minutes: number;
   focusRating?: 1 | 2 | 3 | 4 | 5;
-  source: "timer" | "manual";
+  source: "timer" | "manual" | "calendar";
   createdAt: number;
   driftSummary?: DriftSummary;
+  subject?: string;
 }
 
 let tracks: Track[] = [];
 let sessions: SessionLog[] = [];
 let customTasks: string[] = [];
+let calendarTasks: CalendarTask[] = [];
 
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
 }
 
-let cachedSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[] };
+let cachedSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[], calendarTasks: [] as CalendarTask[] };
 function getSnapshot() {
   return cachedSnap;
 }
 function refreshSnap() {
-  cachedSnap = { tracks, sessions, customTasks };
+  cachedSnap = { tracks, sessions, customTasks, calendarTasks };
 }
 
 function subscribe(cb: () => void) {
@@ -82,11 +119,12 @@ function subscribe(cb: () => void) {
   };
 }
 
-const serverSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[] };
+const serverSnap = { tracks: [] as Track[], sessions: [] as SessionLog[], customTasks: [] as string[], calendarTasks: [] as CalendarTask[] };
 
 let currentSubscriptionUid: string | null = null;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeTracks: (() => void) | null = null;
+let unsubscribeCalendarTasks: (() => void) | null = null;
 
 const CACHE_PREFIX = "store_cache_";
 
@@ -95,9 +133,11 @@ function loadCachedData(uid: string) {
     const cachedSessions = localStorage.getItem(`${CACHE_PREFIX}${uid}_sessions`);
     const cachedTracks = localStorage.getItem(`${CACHE_PREFIX}${uid}_tracks`);
     const cachedTasks = localStorage.getItem(`${CACHE_PREFIX}${uid}_customTasks`);
+    const cachedCalendarTasks = localStorage.getItem(`${CACHE_PREFIX}${uid}_calendarTasks`);
     if (cachedSessions) sessions = JSON.parse(cachedSessions);
     if (cachedTracks) tracks = JSON.parse(cachedTracks);
     if (cachedTasks) customTasks = JSON.parse(cachedTasks);
+    if (cachedCalendarTasks) calendarTasks = JSON.parse(cachedCalendarTasks);
   } catch {
     // ignore
   }
@@ -108,6 +148,7 @@ function saveCache(uid: string) {
     localStorage.setItem(`${CACHE_PREFIX}${uid}_sessions`, JSON.stringify(sessions));
     localStorage.setItem(`${CACHE_PREFIX}${uid}_tracks`, JSON.stringify(tracks));
     localStorage.setItem(`${CACHE_PREFIX}${uid}_customTasks`, JSON.stringify(customTasks));
+    localStorage.setItem(`${CACHE_PREFIX}${uid}_calendarTasks`, JSON.stringify(calendarTasks));
   } catch {
     // localStorage full or unavailable
   }
@@ -118,6 +159,7 @@ function clearCache(uid: string) {
     localStorage.removeItem(`${CACHE_PREFIX}${uid}_sessions`);
     localStorage.removeItem(`${CACHE_PREFIX}${uid}_tracks`);
     localStorage.removeItem(`${CACHE_PREFIX}${uid}_customTasks`);
+    localStorage.removeItem(`${CACHE_PREFIX}${uid}_calendarTasks`);
   } catch {
     // ignore
   }
@@ -138,12 +180,17 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
     unsubscribeTracks();
     unsubscribeTracks = null;
   }
+  if (unsubscribeCalendarTasks) {
+    unsubscribeCalendarTasks();
+    unsubscribeCalendarTasks = null;
+  }
 
   if (!uid) {
     if (previousUid) clearCache(previousUid);
     tracks = [];
     sessions = [];
     customTasks = [];
+    calendarTasks = [];
     refreshSnap();
     onStoreChange();
     return;
@@ -171,6 +218,7 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
           source: data.source,
           createdAt: data.createdAt,
           driftSummary: data.driftSummary,
+          subject: data.subject,
         } as SessionLog;
       });
       refreshSnap();
@@ -194,7 +242,35 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
           console.error("Error seeding tracks:", err);
         }
       } else {
-        tracks = snapshot.data().tracks || [];
+        const loadedTracks: Track[] = snapshot.data().tracks || [];
+        customTasks = snapshot.data().customTasks || [];
+
+        // Migration: backfill seed concepts into chapters that have none
+        let needsMigration = false;
+        const migratedTracks = loadedTracks.map((t) => {
+          const seedTrack = SEED_TRACKS.find((st) => st.id === t.id);
+          const migratedChapters = t.chapters.map((c) => {
+            if (!c.concepts || c.concepts.length === 0) {
+              const seedChapter = seedTrack?.chapters.find((sc) => sc.id === c.id);
+              if (seedChapter?.concepts && seedChapter.concepts.length > 0) {
+                needsMigration = true;
+                return { ...c, concepts: seedChapter.concepts };
+              }
+            }
+            return c;
+          });
+          return { ...t, chapters: migratedChapters };
+        });
+
+        if (needsMigration) {
+          try {
+            await setDoc(tracksDocRef, { tracks: migratedTracks }, { merge: true });
+          } catch (err) {
+            console.error("Error migrating concepts:", err);
+          }
+        }
+
+        tracks = migratedTracks;
         customTasks = snapshot.data().customTasks || [];
         refreshSnap();
         onStoreChange();
@@ -203,6 +279,32 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
     },
     (err) => {
       console.error("Error listening to tracks:", err);
+    }
+  );
+
+  // Subscribe to calendar tasks
+  const calendarTasksCol = collection(db, "users", uid, "calendarTasks");
+  const tasksQ = query(calendarTasksCol, orderBy("createdAt", "asc"));
+  unsubscribeCalendarTasks = onSnapshot(
+    tasksQ,
+    (snapshot) => {
+      calendarTasks = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          dateISO: data.dateISO,
+          text: data.text,
+          subject: data.subject,
+          done: data.done ?? false,
+          createdAt: data.createdAt,
+        } as CalendarTask;
+      });
+      refreshSnap();
+      onStoreChange();
+      saveCache(uid);
+    },
+    (err) => {
+      console.error("Error listening to calendar tasks:", err);
     }
   );
 }
@@ -245,18 +347,72 @@ export async function addChapter(trackId: string, name: string, priority: Priori
   }
 }
 
-export async function setChapterCompletion(chapterId: string, completion: number) {
+export async function setChapterPriority(chapterId: string, priority: Priority) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) =>
+        c.id === chapterId ? { ...c, priority } : c
+      ),
+    }));
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error setting chapter priority:", err);
+  }
+}
+
+export async function setConceptWeight(chapterId: string, conceptId: string, weight: ConceptWeight) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const updatedConcepts = (c.concepts ?? []).map((con) =>
+          con.id === conceptId ? { ...con, weight } : con
+        );
+        return { ...c, concepts: updatedConcepts };
+      }),
+    }));
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error setting concept weight:", err);
+  }
+}
+
+export async function setChapterCompletion(chapterId: string, value: number, note?: string) {
   try {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
-    const clamped = Math.max(0, Math.min(100, Math.round(completion)));
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
     const updatedTracks = tracks.map((t) => ({
       ...t,
-      chapters: t.chapters.map((c) =>
-        c.id === chapterId ? { ...c, completion: clamped } : c
-      ),
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const conceptCompletion = c.concepts?.length ? calcWeightedCompletion(c.concepts) : c.completion;
+        const existingDelta = (c.overrides ?? []).reduce((s, o) => s + o.delta, 0);
+        const currentDisplay = conceptCompletion + existingDelta;
+        const delta = clamped - currentDisplay;
+        const override: ChapterOverride = { delta, ...(note ? { note } : {}) };
+        return { ...c, overrides: [...(c.overrides ?? []), override] };
+      }),
     }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
 
     const tracksDocRef = doc(db, "users", uid, "tracks", "data");
     await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
@@ -265,16 +421,167 @@ export async function setChapterCompletion(chapterId: string, completion: number
   }
 }
 
-export async function bumpChapterFromSession(chapterId: string, minutes: number, rating: number) {
+export async function addChapterAdjustment(chapterId: string, value: number, note?: string) {
   try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const conceptCompletion = c.concepts?.length ? calcWeightedCompletion(c.concepts) : c.completion;
+        const existingDelta = (c.overrides ?? []).reduce((s, o) => s + o.delta, 0);
+        const currentDisplay = conceptCompletion + existingDelta;
+        const delta = clamped - currentDisplay;
+        const override: ChapterOverride = { delta, ...(note ? { note } : {}) };
+        return { ...c, overrides: [...(c.overrides ?? []), override] };
+      }),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error adding chapter adjustment:", err);
+  }
+}
+
+export async function clearChapterOverride(chapterId: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) =>
+        c.id === chapterId ? { ...c, overrides: [] } : c
+      ),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error clearing chapter override:", err);
+  }
+}
+
+export async function removeChapterOverride(chapterId: string, index: number) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const current = c.overrides ?? [];
+        return { ...c, overrides: current.filter((_, i) => i !== index) };
+      }),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error removing chapter override:", err);
+  }
+}
+
+export async function toggleConcept(chapterId: string, conceptId: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const updatedConcepts = (c.concepts ?? []).map((con) =>
+          con.id === conceptId ? { ...con, done: !con.done } : con
+        );
+        return { ...c, concepts: updatedConcepts, completion: calcWeightedCompletion(updatedConcepts) };
+      }),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error toggling concept:", err);
+  }
+}
+
+/** Set ALL concepts in a chapter to done=true or done=false in one Firestore write (fixes glitch) */
+export async function setAllConceptsDone(chapterId: string, done: boolean) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
     const chapter = tracks.flatMap((t) => t.chapters).find((c) => c.id === chapterId);
     if (!chapter) return;
-    // weight by rating (3 = neutral)
-    const weight = 0.7 + (rating / 5) * 0.6;
-    const delta = (minutes / 30) * weight; // ~1% per 30min at rating 3
-    await setChapterCompletion(chapterId, chapter.completion + delta);
+
+    const oldConcepts = chapter.concepts ?? [];
+    const oldWeighted = calcWeightedCompletion(oldConcepts);
+    const updatedConcepts = oldConcepts.map((con) => ({ ...con, done }));
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const updatedConcepts = (c.concepts ?? []).map((con) => ({ ...con, done }));
+        return { ...c, concepts: updatedConcepts, completion: calcWeightedCompletion(updatedConcepts) };
+      }),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
   } catch (err) {
-    console.error("Error bumping chapter from session:", err);
+    console.error("Error setting all concepts:", err);
+  }
+}
+
+export async function addConceptToChapter(chapterId: string, name: string, weight: ConceptWeight) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const newConcept: Concept = { id: nanoid(), name: name.trim(), done: false, weight };
+
+    const updatedTracks = tracks.map((t) => ({
+      ...t,
+      chapters: t.chapters.map((c) => {
+        if (c.id !== chapterId) return c;
+        const updatedConcepts = [...(c.concepts ?? []), newConcept];
+        return { ...c, concepts: updatedConcepts };
+      }),
+    }));
+
+    tracks = updatedTracks;
+    refreshSnap();
+    emit();
+
+    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
+    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+  } catch (err) {
+    console.error("Error adding concept:", err);
   }
 }
 
@@ -289,10 +596,6 @@ export async function addSession(input: Omit<SessionLog, "id" | "createdAt">) {
     };
 
     await addDoc(collection(db, "users", uid, "sessions"), log);
-
-    if (log.chapterId) {
-      await bumpChapterFromSession(log.chapterId, log.minutes, log.focusRating ?? 3);
-    }
   } catch (err) {
     console.error("Error adding session:", err);
   }
@@ -322,6 +625,41 @@ export async function addCustomTask(name: string) {
     await setDoc(tracksDocRef, { customTasks }, { merge: true });
   } catch (err) {
     console.error("Error adding custom task:", err);
+  }
+}
+
+export async function addCalendarTask(dateISO: string, text: string, subject: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const col = collection(db, "users", uid, "calendarTasks");
+    await addDoc(col, { dateISO, text: trimmed, subject, done: false, createdAt: Date.now() });
+  } catch (err) {
+    console.error("Error adding calendar task:", err);
+  }
+}
+
+export async function toggleCalendarTask(id: string, done: boolean) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const ref = doc(db, "users", uid, "calendarTasks", id);
+    await updateDoc(ref, { done });
+  } catch (err) {
+    console.error("Error toggling calendar task:", err);
+  }
+}
+
+export async function deleteCalendarTask(id: string) {
+  try {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const ref = doc(db, "users", uid, "calendarTasks", id);
+    await deleteDoc(ref);
+  } catch (err) {
+    console.error("Error deleting calendar task:", err);
   }
 }
 

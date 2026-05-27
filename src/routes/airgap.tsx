@@ -200,7 +200,7 @@ function AirgapPage() {
           {isExtensionReady ? (
             isOn ? (
               <Dialog open={isOffDialogOpen} onOpenChange={(open) => (open ? openOffFlow() : resetOffFlow())}>
-                <Button variant="secondary" onClick={openOffFlow}>
+                <Button variant="secondary" onClick={openOffFlow} className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
                   Turn Airgap Off
                 </Button>
                 <DialogContent>
@@ -307,6 +307,7 @@ function AirgapPage() {
                 onClick={() => {
                   void toggle();
                 }}
+                className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg"
               >
                 Turn Airgap On
               </Button>
@@ -316,7 +317,7 @@ function AirgapPage() {
               <p className="text-sm text-muted-foreground">
                 Install or reload the extension to apply these rules in Chrome.
               </p>
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
                 <a href="/airgap-install.html" target="_blank" rel="noreferrer">
                   Install instructions
                 </a>
@@ -326,64 +327,118 @@ function AirgapPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Heart className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Healthy Sites</CardTitle>
-            </div>
-            <CardDescription>
-              Domains counted as focused study during sessions. Add specific edu URLs or channel
-              paths — not broad social platforms.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <form className="space-y-2" onSubmit={handleAddHealthySite}>
-              <div className="flex gap-2">
-                <Input
-                  value={healthyInput}
-                  onChange={(event) => {
-                    setHealthyInput(event.target.value);
-                    setHealthyInputError(null);
-                  }}
-                  placeholder="khanacademy.org or youtube.com/@PhysicsWallah"
-                />
-                <Button type="submit" disabled={isSavingHealthy}>
-                  Add
-                </Button>
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Heart className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-base">Healthy Sites</CardTitle>
               </div>
-              {healthyInputError && (
-                <p className="text-xs text-destructive">{healthyInputError}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Never-healthy roots: {NEVER_HEALTHY.join(", ")}
-              </p>
-            </form>
-
-            <div className="space-y-2">
-              {healthySites.map((entry) => (
-                <div
-                  key={entry}
-                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
-                >
-                  <span className="min-w-0 truncate text-sm text-foreground">{entry}</span>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Remove ${entry}`}
-                    onClick={() => {
-                      void removeHealthySiteEntry(entry);
+              <CardDescription>
+                Domains counted as focused study during sessions. Add specific edu URLs or channel
+                paths — not broad social platforms.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form className="space-y-2" onSubmit={handleAddHealthySite}>
+                <div className="flex gap-2">
+                  <Input
+                    value={healthyInput}
+                    onChange={(event) => {
+                      setHealthyInput(event.target.value);
+                      setHealthyInputError(null);
                     }}
-                  >
-                    <X className="h-4 w-4" />
+                    placeholder="khanacademy.org or youtube.com/@PhysicsWallah"
+                  />
+                  <Button type="submit" disabled={isSavingHealthy}>
+                    Add
                   </Button>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                {healthyInputError && (
+                  <p className="text-xs text-destructive">{healthyInputError}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Never-healthy roots: {NEVER_HEALTHY.join(", ")}
+                </p>
+              </form>
+
+              <div className="space-y-2">
+                {healthySites.map((entry) => (
+                  <div
+                    key={entry}
+                    className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                  >
+                    <span className="min-w-0 truncate text-sm text-foreground">{entry}</span>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`Remove ${entry}`}
+                      onClick={() => {
+                        void removeHealthySiteEntry(entry);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-base">Blocked Keywords</CardTitle>
+              </div>
+              <CardDescription>
+                Block any URL containing these terms, such as reels, shorts, or memes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form className="flex gap-2" onSubmit={handleAddKeyword}>
+                <Input
+                  value={keywordInput}
+                  onChange={(event) => setKeywordInput(event.target.value)}
+                  placeholder="shorts"
+                />
+                <Button type="submit" disabled={isSavingKeyword}>
+                  Add
+                </Button>
+              </form>
+
+              <div className="space-y-2">
+                {keywords.length > 0 ? (
+                  keywords.map((entry) => (
+                    <div
+                      key={entry}
+                      className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                    >
+                      <span className="min-w-0 truncate text-sm text-foreground">{entry}</span>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={`Remove ${entry}`}
+                        onClick={() => {
+                          void removeKeyword(entry);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    No keyword rules yet.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader>
@@ -427,58 +482,6 @@ function AirgapPage() {
                   </Button>
                 </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Blocked Keywords</CardTitle>
-            </div>
-            <CardDescription>
-              Block any URL containing these terms, such as reels, shorts, or memes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <form className="flex gap-2" onSubmit={handleAddKeyword}>
-              <Input
-                value={keywordInput}
-                onChange={(event) => setKeywordInput(event.target.value)}
-                placeholder="shorts"
-              />
-              <Button type="submit" disabled={isSavingKeyword}>
-                Add
-              </Button>
-            </form>
-
-            <div className="space-y-2">
-              {keywords.length > 0 ? (
-                keywords.map((entry) => (
-                  <div
-                    key={entry}
-                    className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
-                  >
-                    <span className="min-w-0 truncate text-sm text-foreground">{entry}</span>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`Remove ${entry}`}
-                      onClick={() => {
-                        void removeKeyword(entry);
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))
-              ) : (
-                <p className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                  No keyword rules yet.
-                </p>
-              )}
             </div>
           </CardContent>
         </Card>

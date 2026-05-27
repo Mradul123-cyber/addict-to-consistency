@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useStore } from "@/lib/store";
+import { useMemo } from "react";
+import { useStore, setChapterPriority } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { PriorityDropdown } from "@/components/PriorityDropdown";
 
 const TRACK_NAMES = [
   "Physics",
@@ -42,7 +43,14 @@ export const Route = createFileRoute("/tracks")({
 });
 
 function TracksPage() {
-  const { tracks } = useStore();
+  const { tracks, sessions } = useStore();
+  const minutesByChapter = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const s of sessions) {
+      if (s.chapterId) map[s.chapterId] = (map[s.chapterId] ?? 0) + s.minutes;
+    }
+    return map;
+  }, [sessions]);
   return (
     <div className="space-y-6">
       <div>
@@ -51,8 +59,10 @@ function TracksPage() {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {tracks.map((t) => {
-          const avg =
-            t.chapters.reduce((s, c) => s + c.completion, 0) / Math.max(1, t.chapters.length);
+          const PRIORITY_WEIGHT = { High: 3, Medium: 2, Low: 1 };
+          const totalWeight = t.chapters.reduce((s, c) => s + PRIORITY_WEIGHT[c.priority], 0);
+          const weightedSum = t.chapters.reduce((s, c) => s + c.completion * PRIORITY_WEIGHT[c.priority], 0);
+          const avg = totalWeight > 0 ? weightedSum / totalWeight : 0;
           return (
             <Card key={t.id}>
               <CardHeader>
@@ -69,13 +79,21 @@ function TracksPage() {
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <span>{c.name}</span>
-                        <Badge variant={c.priority === "High" ? "default" : "secondary"}>
-                          {c.priority}
-                        </Badge>
+                        <PriorityDropdown
+                          value={c.priority}
+                          onChange={(v) => setChapterPriority(c.id, v)}
+                        />
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {Math.round(c.completion)}%
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {Math.round(c.completion)}%
+                        </span>
+                        {minutesByChapter[c.id] > 0 && (
+                          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                            {Math.round(minutesByChapter[c.id] / 60 * 10) / 10}h
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <Progress value={c.completion} />
                   </div>
