@@ -112,6 +112,7 @@ export function TeachBoard({
 
         {/* Scrollable Canvas */}
         <div
+          data-teach-board-scroll
           className={`relative z-10 flex-1 overflow-y-auto px-6 md:px-12 pt-8 scrollbar-thin scrollbar-thumb-white/10 ${styles.text} ${
             isFullscreen ? "pb-36" : "pb-12"
           }`}

@@ -3,7 +3,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { TeachBoard } from "@/components/teach/TeachBoard";
 import { BottomDock } from "@/components/teach/BottomDock";
 import { BoardRenderer, getWritingDuration } from "@/components/teach/BoardRenderer";
-import { useTTS } from "@/hooks/useTTS";
+import { speakElement, stopCurrentSpeech } from "@/lib/tts";
+import { ErrorCard } from "@/components/teach/ErrorCard";
 import type {
   AIState,
   BoardConfig,
@@ -223,6 +224,7 @@ function TeachPage() {
   const [elements, setElements] = useState<BoardElement[]>([]);
   const isRevealingRef = useRef(false);
   const pendingQueueRef = useRef<BoardElement[]>([]);
+  const drainPromiseRef = useRef<Promise<void> | null>(null);
   const [dockInput, setDockInput] = useState<DockInputState>({
     text: "",
     isRecording: false,
@@ -236,7 +238,13 @@ function TeachPage() {
 
   // ── TTS ──
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const { speak, cancel } = useTTS(ttsEnabled);
+  const ttsEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  // ── Error state ──
+  const [errorText, setErrorText] = useState<string | null>(null);
 
   // Keep a stable ref so the async stream closure always reads fresh elements
   const elementsRef = useRef<BoardElement[]>([]);
@@ -245,52 +253,60 @@ function TeachPage() {
   }, [elements]);
 
   const drainNext = useCallback(() => {
-    if (pendingQueueRef.current.length === 0) {
-      isRevealingRef.current = false;
-      const last = elementsRef.current.at(-1);
-      if (last?.type === "ai_question") {
-        setCheckpointElementId(last.id);
+    if (isRevealingRef.current) {
+      return drainPromiseRef.current ?? Promise.resolve();
+    }
+
+    isRevealingRef.current = true;
+    drainPromiseRef.current = (async () => {
+      try {
+        while (pendingQueueRef.current.length > 0) {
+          const next = pendingQueueRef.current.shift();
+          if (!next) continue;
+
+          setElements((prev) => [...prev, next]);
+
+          let delay = 300;
+          if (next.type === "ai_body") {
+            delay = getWritingDuration(next.content || "");
+          } else if (
+            next.type === "ai_math" ||
+            next.type === "ai_step" ||
+            next.type === "ai_highlight"
+          ) {
+            delay = 800;
+          } else if (next.type === "ai_header") {
+            delay = 400;
+          } else if (
+            next.type === "ai_warning" ||
+            next.type === "ai_tip" ||
+            next.type === "ai_question"
+          ) {
+            delay = 600;
+          } else if (next.type === "ai_diagram" || next.type === "ai_divider") {
+            delay = 300;
+          }
+
+          const animPromise = new Promise<void>((resolve) => setTimeout(resolve, delay));
+
+          const speakText = next.speak ?? ("content" in next ? next.content : "");
+          const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
+          const speakPromise = shouldSpeak ? speakElement(speakText) : Promise.resolve();
+
+          await Promise.all([animPromise, speakPromise]);
+
+          if (next.type === "ai_question") {
+            setCheckpointElementId(next.id);
+          }
+        }
+      } finally {
+        isRevealingRef.current = false;
+        drainPromiseRef.current = null;
       }
-      return;
-    }
+    })();
 
-    const next = pendingQueueRef.current.shift();
-    if (!next) return;
-
-    setElements((prev) => [...prev, next]);
-
-    if (next.type === "ai_body" && "content" in next) {
-      cancel();
-      speak(next.content);
-    }
-
-    if (next.type === "ai_question") {
-      setCheckpointElementId(next.id);
-    }
-
-    let delay = 300;
-    if (next.type === "ai_body") {
-      delay = getWritingDuration(next.content || "");
-    } else if (
-      next.type === "ai_math" ||
-      next.type === "ai_step" ||
-      next.type === "ai_highlight"
-    ) {
-      delay = 800;
-    } else if (next.type === "ai_header") {
-      delay = 400;
-    } else if (
-      next.type === "ai_warning" ||
-      next.type === "ai_tip" ||
-      next.type === "ai_question"
-    ) {
-      delay = 600;
-    } else if (next.type === "ai_diagram" || next.type === "ai_divider") {
-      delay = 300;
-    }
-
-    setTimeout(drainNext, delay);
-  }, [speak, cancel, setElements, setCheckpointElementId]);
+    return drainPromiseRef.current;
+  }, [setElements, setCheckpointElementId]);
 
   // Fullscreen
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -385,10 +401,7 @@ function TeachPage() {
                   } as BoardElement;
 
                   pendingQueueRef.current.push(el);
-                  if (!isRevealingRef.current) {
-                    isRevealingRef.current = true;
-                    drainNext();
-                  }
+                  void drainNext();
                   lastElementType = parsed.type;
 
                   console.log("element parsed:", el.type, el.id);
@@ -401,21 +414,16 @@ function TeachPage() {
         }
 
         void lastElementType; // suppress unused warning
+        const finalDrain = drainNext();
+        await finalDrain;
       } catch (err: any) {
         console.error("Streaming error:", err);
-        setElements((prev) => [
-          ...prev,
-          {
-            id: nanoid(),
-            type: "ai_body",
-            content: `Error connecting to streaming server: ${err.message}. Make sure your worker is running and VITE_WORKER_URL is set correctly.`,
-          },
-        ]);
+        setErrorText(err.message);
       } finally {
         setAiState("idle");
       }
     },
-    [speak, drainNext]
+    [drainNext]
   );
 
   // ── Build history from current elements ───────────────────────────────────
@@ -426,10 +434,15 @@ function TeachPage() {
           acc.push({ role: "user", content: el.content });
         } else {
           const last = acc[acc.length - 1];
-          const summary = `[ELEMENT]: ${JSON.stringify({
-            type: el.type,
-            ...("content" in el ? { content: el.content } : "latex" in el ? { latex: el.latex } : {}),
-          })}`;
+          // Re-create the element for history representation without the speak field
+          const histObj: any = { type: el.type };
+          if ("content" in el) histObj.content = el.content;
+          if ("latex" in el) histObj.latex = el.latex;
+          if ("number" in el) histObj.number = el.number;
+          if ("label" in el) histObj.label = el.label;
+          if ("description" in el) histObj.description = el.description;
+
+          const summary = `[ELEMENT]: ${JSON.stringify(histObj)}`;
           if (last?.role === "assistant") {
             last.content += "\n" + summary;
           } else {
@@ -444,8 +457,11 @@ function TeachPage() {
   // ── Send a message (from dock or checkpoint) ──────────────────────────────
   const sendMessage = useCallback(
     (text: string) => {
+      // Clear any prior error
+      setErrorText(null);
+
       // Stop any ongoing TTS
-      cancel();
+      stopCurrentSpeech();
 
       // Clear any pending queue
       pendingQueueRef.current = [];
@@ -458,16 +474,29 @@ function TeachPage() {
 
       // Build history including the newly added student element
       const history = buildHistory([...elementsRef.current, studentEl]);
-      const messages = [
-        { role: "system", content: SYSTEM_MESSAGE },
-        ...history,
-        // history already ends with the student turn — don't duplicate
-      ];
+      const messages = [...history];
 
       streamToBoard(messages);
     },
-    [cancel, buildHistory, streamToBoard]
+    [buildHistory, streamToBoard]
   );
+
+  // ── Retry sending the last student message ──────────────────────────────
+  const handleRetry = useCallback(() => {
+    const lastStudent = [...elementsRef.current]
+      .reverse()
+      .find((el) => el.type === "student_text");
+    if (!lastStudent) return;
+
+    setErrorText(null);
+    setAiState("thinking");
+
+    // Build history including the last student text
+    const history = buildHistory(elementsRef.current);
+    const messages = [...history];
+
+    streamToBoard(messages);
+  }, [buildHistory, streamToBoard]);
 
   // ── Checkpoint answer ─────────────────────────────────────────────────────
   const handleCheckpointAnswer = useCallback(
@@ -519,7 +548,15 @@ function TeachPage() {
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
         ttsEnabled={ttsEnabled}
-        onToggleTTS={() => setTtsEnabled((v) => !v)}
+        onToggleTTS={() => {
+          setTtsEnabled((v) => {
+            const nextVal = !v;
+            if (!nextVal) {
+              stopCurrentSpeech();
+            }
+            return nextVal;
+          });
+        }}
       >
         {elements.length === 0 ? (
           <p className="py-20 text-center text-sm font-light h-full opacity-35 max-w-sm mx-auto">
@@ -538,6 +575,14 @@ function TeachPage() {
           </div>
         )}
       </TeachBoard>
+
+      {/* ── Error Card ── */}
+      {errorText && (
+        <ErrorCard
+          message={errorText}
+          onRetry={handleRetry}
+        />
+      )}
 
       {/* ── Bottom Dock ── */}
       <BottomDock

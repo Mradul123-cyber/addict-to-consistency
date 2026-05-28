@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { BoardElement, BoardMode } from "@/types/teach";
-import { BlockMath } from "react-katex";
+import { BlockMath, InlineMath } from "react-katex";
 import "katex/dist/katex.min.css";
 
 export function getWritingDuration(text: string): number {
@@ -17,6 +17,34 @@ export function getWritingDuration(text: string): number {
     }
   }
   return duration;
+}
+
+function renderBoldText(text: string, keyPrefix: string) {
+  const parts = text.split(/(\*[^*\n]+\*)/g);
+
+  return parts.map((part, index) => {
+    const key = `${keyPrefix}-bold-${index}`;
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return <strong key={key}>{part.slice(1, -1)}</strong>;
+    }
+    return part;
+  });
+}
+
+function renderInlineContent(text: string) {
+  const parts = text.split(/(\\\(.+?\\\))/g);
+
+  return parts.map((part, index) => {
+    const key = `inline-${index}`;
+    if (part.startsWith("\\(") && part.endsWith("\\)")) {
+      return <InlineMath key={key} math={part.slice(2, -2)} />;
+    }
+    return renderBoldText(part, key);
+  });
+}
+
+function PlainText({ text }: { text: string }) {
+  return <>{renderInlineContent(text)}</>;
 }
 
 function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: boolean }) {
@@ -68,7 +96,7 @@ function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: bo
         isBlackboard ? "text-neutral-100" : "text-neutral-900"
       }`}
     >
-      {displayed}
+      {done ? renderInlineContent(text) : renderBoldText(displayed, "typewriter")}
     </p>
   );
 }
@@ -88,9 +116,10 @@ export function MathRenderer({ latex, isBlackboard }: MathRendererProps) {
   return (
     <div className="my-6 flex justify-start pl-2">
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+        initial={{ opacity: 0, scaleX: 0 }}
+        animate={{ opacity: 1, scaleX: 1 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        style={{ transformOrigin: "left" }}
         className={`flex items-center justify-start rounded-xl border px-8 py-5 ${bgBox} ${borderBox} relative overflow-hidden transition-all duration-300 shadow-md ${textColor}`}
       >
         <div className="text-xl md:text-2xl select-all font-sans">
@@ -156,7 +185,9 @@ function OptionCard({ label, content, state, disabled, isBlackboard, onClick }: 
       >
         {label}
       </span>
-      <span className="text-base font-medium leading-snug">{content}</span>
+      <span className="text-base font-medium leading-snug">
+        <PlainText text={content} />
+      </span>
     </motion.button>
   );
 }
@@ -353,7 +384,13 @@ export function BoardRenderer({
 
   // Auto-scroll whenever a new element lands
   useEffect(() => {
-    sentinelRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const sentinel = sentinelRef.current;
+    const scrollContainer = sentinel?.closest<HTMLElement>("[data-teach-board-scroll]");
+
+    scrollContainer?.scrollTo({
+      top: scrollContainer.scrollHeight,
+      behavior: "smooth",
+    });
   }, [elements.length]);
 
   return (
@@ -390,7 +427,7 @@ export function BoardRenderer({
                   className={`text-lg font-semibold tracking-wide antialiased transition-colors duration-300 ${isBlackboard ? "text-amber-300" : "text-amber-600"
                     }`}
                 >
-                  {el.content}
+                  <PlainText text={el.content} />
                 </p>
               </motion.div>
             );
@@ -411,7 +448,7 @@ export function BoardRenderer({
                       : "text-emerald-600"
                     }`}
                 >
-                  {el.content}
+                  <PlainText text={el.content} />
                 </h2>
               </motion.div>
             );
@@ -477,7 +514,9 @@ export function BoardRenderer({
                     }`}
                 >
                   <div className="text-xs font-bold uppercase tracking-wider mb-2">⚠ JEE Trap</div>
-                  <p className="text-lg font-medium leading-relaxed antialiased">{el.content}</p>
+                  <p className="text-lg font-medium leading-relaxed antialiased">
+                    <PlainText text={el.content} />
+                  </p>
                 </div>
               </motion.div>
             );
@@ -499,7 +538,9 @@ export function BoardRenderer({
                     }`}
                 >
                   <div className="text-xs font-bold uppercase tracking-wider mb-2">⚡ JEE Shortcut</div>
-                  <p className="text-lg font-medium leading-relaxed antialiased">{el.content}</p>
+                  <p className="text-lg font-medium leading-relaxed antialiased">
+                    <PlainText text={el.content} />
+                  </p>
                 </div>
               </motion.div>
             );
@@ -535,7 +576,7 @@ export function BoardRenderer({
                     )}
                   </div>
                   <p className="text-lg font-medium leading-relaxed antialiased italic">
-                    {el.content}
+                    <PlainText text={el.content} />
                   </p>
                 </div>
 
@@ -581,7 +622,7 @@ export function BoardRenderer({
                       className={`text-sm font-medium tracking-wide ${isBlackboard ? "text-neutral-400" : "text-neutral-500"
                         }`}
                     >
-                      {el.label}
+                      <PlainText text={el.label} />
                     </span>
                     <div
                       className={`text-lg select-all font-sans ${isBlackboard ? "text-cyan-200" : "text-cyan-800"
@@ -641,7 +682,7 @@ export function BoardRenderer({
                       <circle cx="34" cy="14" r="4" />
                     </svg>
                     <p className="text-sm font-medium leading-relaxed text-center max-w-md opacity-80">
-                      {el.description}
+                      <PlainText text={el.description} />
                     </p>
                   </div>
                 </div>

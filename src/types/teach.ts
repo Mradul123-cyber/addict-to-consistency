@@ -14,7 +14,7 @@ export interface BoardConfig {
 
 // ─── Board Element Types ──────────────────────────────────────────────────────
 
-export type BoardElement =
+export type BoardElement = (
   | { id: string; type: "student_text"; content: string }
   | { id: string; type: "ai_header"; content: string }
   | { id: string; type: "ai_body"; content: string }
@@ -26,7 +26,8 @@ export type BoardElement =
   | { id: string; type: "ai_step"; number: number; label: string; latex: string }
   | { id: string; type: "ai_diagram"; description: string }
   | { id: string; type: "ai_option"; label: string; content: string }
-  | { id: string; type: "ai_divider" };
+  | { id: string; type: "ai_divider" }
+) & { speak?: string };
 
 // ─── Teaching Session ─────────────────────────────────────────────────────────
 
