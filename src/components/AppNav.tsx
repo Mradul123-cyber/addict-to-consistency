@@ -66,6 +66,7 @@ const links = [
   { to: "/log", label: "Log" },
   { to: "/airgap", label: "Airgap" },
   { to: "/matrix", label: "Matrix" },
+  { to: "/teach", label: "Teach" },
 ] as const;
 
 const navLinkClass =

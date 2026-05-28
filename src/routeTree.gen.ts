@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TracksRouteImport } from './routes/tracks'
+import { Route as TeachRouteImport } from './routes/teach'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as MatrixRouteImport } from './routes/matrix'
@@ -21,6 +22,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const TracksRoute = TracksRouteImport.update({
   id: '/tracks',
   path: '/tracks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeachRoute = TeachRouteImport.update({
+  id: '/teach',
+  path: '/teach',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/notes'
     | '/sitemap.xml'
+    | '/teach'
     | '/tracks'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/notes'
     | '/sitemap.xml'
+    | '/teach'
     | '/tracks'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/matrix'
     | '/notes'
     | '/sitemap.xml'
+    | '/teach'
     | '/tracks'
   fileRoutesById: FileRoutesById
 }
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   MatrixRoute: typeof MatrixRoute
   NotesRoute: typeof NotesRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TeachRoute: typeof TeachRoute
   TracksRoute: typeof TracksRoute
 }
 
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/tracks'
       fullPath: '/tracks'
       preLoaderRoute: typeof TracksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teach': {
+      id: '/teach'
+      path: '/teach'
+      fullPath: '/teach'
+      preLoaderRoute: typeof TeachRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   MatrixRoute: MatrixRoute,
   NotesRoute: NotesRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TeachRoute: TeachRoute,
   TracksRoute: TracksRoute,
 }
 export const routeTree = rootRouteImport
