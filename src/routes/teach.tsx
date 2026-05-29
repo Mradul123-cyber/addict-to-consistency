@@ -305,6 +305,38 @@ function TeachPage() {
   // ── Error state ──
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  // ── Prompt quota ──
+  const { user } = useAuth();
+  const [promptCount, setPromptCount] = useState<number>(0);
+  const [quotaLoaded, setQuotaLoaded] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const promptCountRef = useRef(0);
+  useEffect(() => {
+    promptCountRef.current = promptCount;
+  }, [promptCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.uid) {
+      setPromptCount(0);
+      setQuotaLoaded(true);
+      return;
+    }
+    setQuotaLoaded(false);
+    getTeachPromptCount(user.uid).then((n) => {
+      if (!cancelled) {
+        setPromptCount(n);
+        setQuotaLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  const remaining = Math.max(0, TEACH_PROMPT_LIMIT - promptCount);
+  const isBlocked = quotaLoaded && remaining <= 0;
+
   // Keep a stable ref so the async stream closure always reads fresh elements
   const elementsRef = useRef<BoardElement[]>([]);
   useEffect(() => {
