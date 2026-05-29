@@ -15,6 +15,14 @@ import type {
   UploadedAttachmentKind,
 } from "@/types/teach";
 import { nanoid } from "nanoid";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  TEACH_PROMPT_LIMIT,
+  getTeachPromptCount,
+  incrementTeachPromptCount,
+} from "@/lib/teach-quota";
+import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
+import { toast } from "sonner";
 
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 // NOTE: Worker now injects its own copy — this is kept for history reconstruction only.
