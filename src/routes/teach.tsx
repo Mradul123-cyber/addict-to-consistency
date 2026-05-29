@@ -649,6 +649,17 @@ function TeachPage() {
   // ── Send a message (from dock or checkpoint) ──────────────────────────────
   const sendMessage = useCallback(
     (text: string) => {
+      // Quota gate
+      if (quotaLoaded && promptCountRef.current >= TEACH_PROMPT_LIMIT) {
+        toast.error("You've used all 5 free prompts. Thanks for trying Matrix!");
+        setFeedbackOpen(true);
+        return;
+      }
+      if (!user?.uid) {
+        toast.error("Please sign in to use the AI teaching board.");
+        return;
+      }
+
       // Clear any prior error
       setErrorText(null);
 
@@ -677,9 +688,28 @@ function TeachPage() {
       const history = buildHistory([...elementsRef.current, studentEl]);
       const messages = [...history];
 
-      streamToBoard(messages, messageAttachments);
+      const uid = user.uid;
+      void (async () => {
+        const ok = await streamToBoard(messages, messageAttachments);
+        if (!ok) return;
+        try {
+          const next = await incrementTeachPromptCount(uid);
+          setPromptCount(next);
+          const remainingAfter = TEACH_PROMPT_LIMIT - next;
+          if (next >= TEACH_PROMPT_LIMIT) {
+            setFeedbackOpen(true);
+          } else if (remainingAfter === 2 || remainingAfter === 1) {
+            toast.warning(
+              `${remainingAfter} free prompt${remainingAfter === 1 ? "" : "s"} left`,
+              { description: "You have a limited number of teaching prompts." }
+            );
+          }
+        } catch {
+          // increment failed (offline / rules) — surface gracefully
+        }
+      })();
     },
-    [attachments, buildHistory, streamToBoard]
+    [attachments, buildHistory, streamToBoard, quotaLoaded, user?.uid]
   );
 
   // ── Retry sending the last student message ──────────────────────────────
