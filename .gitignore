@@ -35,3 +35,6 @@ storage.cors.json
 storage.cors.json
 
 storage.cors.json
+
+.cursor/
+.lovable/
