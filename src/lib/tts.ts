@@ -109,7 +109,6 @@ export async function speakElement(text: string): Promise<void> {
 
 // Disconnects and stops the current source node if playing
 export function stopCurrentSpeech() {
-  activeSpeechId++;
   if (currentSourceNode) {
     try {
       currentSourceNode.stop();

@@ -214,6 +214,29 @@ export const Route = createFileRoute("/teach")({
   component: TeachPage,
 });
 
+function parseBoardElementJson(jsonStr: string) {
+  try {
+    return JSON.parse(jsonStr);
+  } catch (firstError) {
+    const escapedJsonStr = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+    if (escapedJsonStr === jsonStr) {
+      throw firstError;
+    }
+
+    try {
+      return JSON.parse(escapedJsonStr);
+    } catch (secondError) {
+      console.error("Failed after escaping invalid JSON backslashes:", {
+        original: jsonStr,
+        escaped: escapedJsonStr,
+        firstError,
+        secondError,
+      });
+      throw secondError;
+    }
+  }
+}
+
 function TeachPage() {
   // ── UI state ──
   const [boardConfig, setBoardConfig] = useState<BoardConfig>({
@@ -293,7 +316,9 @@ function TeachPage() {
           const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
           const speakPromise = shouldSpeak ? speakElement(speakText) : Promise.resolve();
 
+          console.log("revealing:", next.type, "speak text length:", speakText.length);
           await Promise.all([animPromise, speakPromise]);
+          console.log("done revealing:", next.type);
 
           if (next.type === "ai_question") {
             setCheckpointElementId(next.id);
@@ -351,6 +376,10 @@ function TeachPage() {
         const decoder = new TextDecoder("utf-8");
         let accumulatedSseText = "";
         let aiTextBuffer = "";
+        let rawModelText = "";
+        let sawAiQuestionInStream = false;
+        let sawAiQuestionElementLine = false;
+        let parsedAiQuestion = false;
         const processedElements = new Set<string>();
         let lastElementType: string | null = null;
 
@@ -377,6 +406,14 @@ function TeachPage() {
               try {
                 const sseData = JSON.parse(trimmed.slice(6));
                 const content = sseData.choices?.[0]?.delta?.content || "";
+                rawModelText += content;
+                if (content.includes("ai_question")) {
+                  console.log("AI stream contains ai_question delta:", content);
+                }
+                if (!sawAiQuestionInStream && rawModelText.includes("ai_question")) {
+                  sawAiQuestionInStream = true;
+                  console.log("AI stream contains ai_question in accumulated response");
+                }
                 aiTextBuffer += content;
               } catch {
                 // partial SSE — ignore
@@ -390,11 +427,19 @@ function TeachPage() {
           for (const aiLine of aiLines) {
             const elementTrimmed = aiLine.trim();
             if (elementTrimmed.startsWith("[ELEMENT]: ")) {
+              if (elementTrimmed.includes("ai_question")) {
+                sawAiQuestionElementLine = true;
+                console.log("Parser saw ai_question element line:", elementTrimmed);
+              }
               const jsonStr = elementTrimmed.slice(11).trim();
               if (!processedElements.has(jsonStr)) {
                 processedElements.add(jsonStr);
                 try {
-                  const parsed = JSON.parse(jsonStr) as Omit<BoardElement, "id">;
+                  const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
+                  if (parsed.type === "ai_question") {
+                    parsedAiQuestion = true;
+                    console.log("Parser parsed ai_question:", parsed);
+                  }
                   const el: BoardElement = {
                     ...parsed,
                     id: nanoid(),
@@ -405,15 +450,70 @@ function TeachPage() {
                   lastElementType = parsed.type;
 
                   console.log("element parsed:", el.type, el.id);
-                } catch {
-                  console.error("Failed to parse board element JSON:", jsonStr);
+                } catch (parseError) {
+                  console.error("Failed to parse board element JSON:", jsonStr, parseError);
                 }
               }
             }
           }
         }
 
+        const finalElementLine = aiTextBuffer.trim();
+        if (finalElementLine.startsWith("[ELEMENT]: ")) {
+          if (finalElementLine.includes("ai_question")) {
+            sawAiQuestionElementLine = true;
+            console.log("Parser saw ai_question element line:", finalElementLine);
+          }
+
+          const jsonStr = finalElementLine.slice(11).trim();
+          if (!processedElements.has(jsonStr)) {
+            processedElements.add(jsonStr);
+            try {
+              const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
+              if (parsed.type === "ai_question") {
+                parsedAiQuestion = true;
+                console.log("Parser parsed ai_question:", parsed);
+              }
+
+              const el: BoardElement = {
+                ...parsed,
+                id: nanoid(),
+              } as BoardElement;
+
+              pendingQueueRef.current.push(el);
+              void drainNext();
+              lastElementType = parsed.type;
+
+              console.log("element parsed:", el.type, el.id);
+            } catch (parseError) {
+              console.error("Failed to parse final board element JSON:", jsonStr, parseError);
+            }
+          }
+        } else if (finalElementLine) {
+          console.log("Stream ended with non-element text left in parser buffer:", finalElementLine);
+        }
+
         void lastElementType; // suppress unused warning
+        console.log("AI question trace summary:", {
+          sawAiQuestionInStream,
+          sawAiQuestionElementLine,
+          parsedAiQuestion,
+          responseLength: rawModelText.length,
+          lastElementType,
+          responseTail: rawModelText.slice(-500),
+        });
+        if (!sawAiQuestionInStream) {
+          console.log("AI response did not contain ai_question", {
+            responseLength: rawModelText.length,
+            lastElementType,
+          });
+        } else if (!sawAiQuestionElementLine) {
+          console.log("AI response contained ai_question, but parser did not see a complete element line", {
+            responseLength: rawModelText.length,
+          });
+        } else if (!parsedAiQuestion) {
+          console.log("Parser saw an ai_question line, but did not parse it as ai_question");
+        }
         const finalDrain = drainNext();
         await finalDrain;
       } catch (err: any) {
@@ -532,10 +632,10 @@ function TeachPage() {
   };
 
   // ── Dock disabled conditions ──────────────────────────────────────────────
-  const dockDisabled = aiState === "thinking" || checkpointElementId !== null;
+  const dockDisabled = aiState === "thinking";
   const dockPlaceholder =
     checkpointElementId !== null
-      ? "Answer Arjun's question above first…"
+      ? "Answer, ask a follow-up, or steer the lesson..."
       : undefined;
 
   return (

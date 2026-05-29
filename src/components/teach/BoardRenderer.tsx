@@ -556,29 +556,13 @@ export function BoardRenderer({
                 transition={{ duration: 0.5, delay: 0.15 }}
                 className="max-w-3xl my-4"
               >
-                <div
-                  className={`rounded-xl border p-5 shadow-sm transition-all duration-300 ${isActive
-                      ? isBlackboard
-                        ? "border-violet-400/50 bg-violet-500/12 text-violet-200 ring-1 ring-violet-400/20"
-                        : "border-violet-400/60 bg-violet-50 text-violet-800 ring-1 ring-violet-300"
-                      : isBlackboard
-                        ? "border-violet-400/30 bg-violet-500/10 text-violet-200"
-                        : "border-violet-400/40 bg-violet-50 text-violet-800"
-                    }`}
+                <p
+                  className={`text-lg font-medium tracking-wide leading-relaxed antialiased italic transition-colors duration-300 ${
+                    isBlackboard ? "text-neutral-100" : "text-neutral-900"
+                  }`}
                 >
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider mb-2">
-                    🤔 Think
-                    {isActive && (
-                      <span className="flex items-center gap-1 animate-pulse text-violet-400 font-semibold normal-case tracking-normal ml-2">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400" />
-                        Waiting for your answer…
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-lg font-medium leading-relaxed antialiased italic">
-                    <PlainText text={el.content} />
-                  </p>
-                </div>
+                  <PlainText text={el.content} />
+                </p>
 
                 {/* Inline answer input — only shown while this is the active checkpoint */}
                 <AnimatePresence>
