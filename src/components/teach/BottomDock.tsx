@@ -1,11 +1,12 @@
 import { useRef } from "react";
 import { motion } from "framer-motion";
-import { Mic, MicOff, Paperclip, SendHorizonal } from "lucide-react";
+import { FileText, ImageIcon, Mic, MicOff, Paperclip, SendHorizonal, X } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
 
 export function BottomDock({
   inputState,
   actions,
+  attachments,
   onInputChange,
   disabled = false,
   placeholder = "Ask anything about this concept…",
@@ -14,7 +15,7 @@ export function BottomDock({
 
   const handleSend = () => {
     const trimmed = inputState.text.trim();
-    if (!trimmed || disabled) return;
+    if ((!trimmed && attachments.length === 0) || disabled) return;
     actions.onSendMessage(trimmed);
     onInputChange("");
   };
@@ -69,7 +70,7 @@ export function BottomDock({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,.pdf,.txt"
+          accept="image/*,.pdf,.txt,.md,.csv"
           className="hidden"
           onChange={handleFileChange}
           disabled={disabled}
@@ -85,17 +86,47 @@ export function BottomDock({
           <Paperclip className="h-4 w-4" />
         </motion.button>
 
-        {/* Text input */}
-        <textarea
-          rows={1}
-          value={inputState.text}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          className="flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
-          style={{ maxHeight: "7rem", lineHeight: "1.5rem" }}
-        />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {attachments.map((attachment) => {
+                const isImage = attachment.kind === "image";
+                const Icon = isImage ? ImageIcon : FileText;
+
+                return (
+                  <div
+                    key={attachment.id}
+                    className="flex max-w-[13rem] items-center gap-1.5 rounded-lg bg-white/8 px-2 py-1 text-xs text-white/75 ring-1 ring-white/10"
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-white/45" />
+                    <span className="truncate">{attachment.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => actions.onRemoveAttachment(attachment.id)}
+                      disabled={disabled}
+                      aria-label={`Remove ${attachment.name}`}
+                      className="ml-0.5 rounded p-0.5 text-white/35 transition hover:bg-white/10 hover:text-white/75 disabled:opacity-25"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Text input */}
+          <textarea
+            rows={1}
+            value={inputState.text}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={disabled}
+            className="resize-none bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
+            style={{ maxHeight: "7rem", lineHeight: "1.5rem" }}
+          />
+        </div>
 
         {/* Mic */}
         <motion.button
@@ -128,7 +159,7 @@ export function BottomDock({
           type="button"
           whileTap={{ scale: 0.85 }}
           onClick={handleSend}
-          disabled={disabled || !inputState.text.trim()}
+          disabled={disabled || (!inputState.text.trim() && attachments.length === 0)}
           aria-label="Send message"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white transition-all disabled:cursor-not-allowed disabled:opacity-25"
           style={{

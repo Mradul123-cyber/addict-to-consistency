@@ -12,10 +12,83 @@ export interface BoardConfig {
   content: string;
 }
 
+export type UploadedAttachmentKind = "image" | "pdf" | "text" | "file";
+
+export interface UploadedAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: UploadedAttachmentKind;
+  dataUrl?: string;
+  text?: string;
+}
+
+export interface GraphPoint {
+  x: number;
+  y: number;
+  label?: string;
+}
+
+export interface DiagramObject {
+  kind: "point" | "line" | "arrow" | "vector" | "circle" | "rect" | "label";
+  x: number;
+  y: number;
+  x2?: number;
+  y2?: number;
+  r?: number;
+  width?: number;
+  height?: number;
+  label?: string;
+  color?: string;
+}
+
+export interface ShapeVector3D {
+  x: number;
+  y: number;
+  z: number;
+  label?: string;
+  color?: string;
+}
+
+export interface SemanticDiagramEntity {
+  kind:
+    | "axis"
+    | "surface"
+    | "line_charge"
+    | "point_charge"
+    | "distance"
+    | "vector"
+    | "block"
+    | "incline"
+    | "label";
+  label?: string;
+  axis?: "x" | "y" | "z";
+  plane?: "xy" | "yz" | "xz";
+  direction?: "up" | "down" | "left" | "right" | "in" | "out";
+  widthLabel?: string;
+  heightLabel?: string;
+  lengthLabel?: string;
+  positionLabel?: string;
+  color?: string;
+}
+
+export interface Scene3DObject {
+  kind: "axes" | "plane" | "line_charge" | "point" | "vector" | "cube" | "sphere";
+  label?: string;
+  axis?: "x" | "y" | "z";
+  plane?: "xy" | "yz" | "xz";
+  position?: [number, number, number];
+  end?: [number, number, number];
+  size?: [number, number] | [number, number, number];
+  radius?: number;
+  color?: string;
+}
+
 // ─── Board Element Types ──────────────────────────────────────────────────────
 
 export type BoardElement = (
-  | { id: string; type: "student_text"; content: string }
+  | { id: string; type: "student_text"; content: string; attachments?: UploadedAttachment[] }
   | { id: string; type: "ai_header"; content: string }
   | { id: string; type: "ai_body"; content: string }
   | { id: string; type: "ai_math"; latex: string }
@@ -25,6 +98,42 @@ export type BoardElement = (
   | { id: string; type: "ai_question"; content: string }
   | { id: string; type: "ai_step"; number: number; label: string; latex: string }
   | { id: string; type: "ai_diagram"; description: string }
+  | {
+      id: string;
+      type: "ai_semantic_diagram";
+      view: "side_view" | "top_view" | "front_view" | "free_body" | "coordinate_2d";
+      title?: string;
+      entities: SemanticDiagramEntity[];
+    }
+  | {
+      id: string;
+      type: "ai_3d_scene";
+      title?: string;
+      objects: Scene3DObject[];
+      camera?: [number, number, number];
+    }
+  | {
+      id: string;
+      type: "ai_graph";
+      title?: string;
+      xLabel?: string;
+      yLabel?: string;
+      points: GraphPoint[];
+    }
+  | {
+      id: string;
+      type: "ai_diagram_v2";
+      title?: string;
+      objects: DiagramObject[];
+    }
+  | {
+      id: string;
+      type: "ai_3d_shape";
+      shape: "cube" | "sphere" | "cylinder" | "axes" | "rotation_axes";
+      title?: string;
+      vectors?: ShapeVector3D[];
+      labels?: string[];
+    }
   | { id: string; type: "ai_option"; label: string; content: string }
   | { id: string; type: "ai_divider" }
 ) & { speak?: string };
@@ -57,7 +166,8 @@ export interface DockInputState {
 export interface TeachActions {
   onSendMessage: (text: string) => void;
   onToggleRecording: () => void;
-  onUploadFile: (file: File) => void;
+  onUploadFile: (file: File) => void | Promise<void>;
+  onRemoveAttachment: (id: string) => void;
 }
 
 // ─── AI Visualizer ────────────────────────────────────────────────────────────
@@ -94,6 +204,7 @@ export interface TeachBoardProps {
 export interface BottomDockProps {
   inputState: DockInputState;
   actions: TeachActions;
+  attachments: UploadedAttachment[];
   onInputChange: (text: string) => void;
   disabled?: boolean;
   /** Override the textarea placeholder — e.g. during checkpoint lock */

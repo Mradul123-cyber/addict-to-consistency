@@ -11,6 +11,8 @@ import type {
   BoardElement,
   DockInputState,
   TeachActions,
+  UploadedAttachment,
+  UploadedAttachmentKind,
 } from "@/types/teach";
 import { nanoid } from "nanoid";
 
@@ -237,6 +239,31 @@ function parseBoardElementJson(jsonStr: string) {
   }
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+function getAttachmentKind(file: File): UploadedAttachmentKind {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type === "application/pdf") return "pdf";
+  if (file.type.startsWith("text/") || /\.(txt|md|csv)$/i.test(file.name)) return "text";
+  return "file";
+}
+
 function TeachPage() {
   // ── UI state ──
   const [boardConfig, setBoardConfig] = useState<BoardConfig>({
@@ -252,6 +279,7 @@ function TeachPage() {
     text: "",
     isRecording: false,
   });
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
 
   // ── Checkpoint state ──
   const [checkpointElementId, setCheckpointElementId] = useState<string | null>(null);
@@ -300,15 +328,23 @@ function TeachPage() {
             delay = 800;
           } else if (next.type === "ai_header") {
             delay = 400;
-          } else if (
-            next.type === "ai_warning" ||
-            next.type === "ai_tip" ||
-            next.type === "ai_question"
-          ) {
-            delay = 600;
-          } else if (next.type === "ai_diagram" || next.type === "ai_divider") {
-            delay = 300;
-          }
+        } else if (
+          next.type === "ai_warning" ||
+          next.type === "ai_tip" ||
+          next.type === "ai_question"
+        ) {
+          delay = 600;
+        } else if (
+          next.type === "ai_graph" ||
+          next.type === "ai_semantic_diagram" ||
+          next.type === "ai_diagram_v2" ||
+          next.type === "ai_3d_scene" ||
+          next.type === "ai_3d_shape"
+        ) {
+          delay = 700;
+        } else if (next.type === "ai_diagram" || next.type === "ai_divider") {
+          delay = 300;
+        }
 
           const animPromise = new Promise<void>((resolve) => setTimeout(resolve, delay));
 
@@ -355,14 +391,17 @@ function TeachPage() {
 
   // ── Core streaming function ────────────────────────────────────────────────
   const streamToBoard = useCallback(
-    async (messages: { role: string; content: string }[]) => {
+    async (
+      messages: { role: string; content: string }[],
+      requestAttachments: UploadedAttachment[] = []
+    ) => {
       const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
 
       try {
         const response = await fetch(workerUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, attachments: requestAttachments }),
         });
 
         if (!response.ok) {
@@ -541,6 +580,17 @@ function TeachPage() {
           if ("number" in el) histObj.number = el.number;
           if ("label" in el) histObj.label = el.label;
           if ("description" in el) histObj.description = el.description;
+          if ("title" in el) histObj.title = el.title;
+          if ("points" in el) histObj.points = el.points;
+          if ("objects" in el) histObj.objects = el.objects;
+          if ("entities" in el) histObj.entities = el.entities;
+          if ("view" in el) histObj.view = el.view;
+          if ("shape" in el) histObj.shape = el.shape;
+          if ("vectors" in el) histObj.vectors = el.vectors;
+          if ("labels" in el) histObj.labels = el.labels;
+          if ("camera" in el) histObj.camera = el.camera;
+          if ("xLabel" in el) histObj.xLabel = el.xLabel;
+          if ("yLabel" in el) histObj.yLabel = el.yLabel;
 
           const summary = `[ELEMENT]: ${JSON.stringify(histObj)}`;
           if (last?.role === "assistant") {
@@ -566,19 +616,28 @@ function TeachPage() {
       // Clear any pending queue
       pendingQueueRef.current = [];
 
+      const messageAttachments = attachments;
+      const studentContent = text.trim();
+
       // Append student element immediately
-      const studentEl: BoardElement = { id: nanoid(), type: "student_text", content: text };
+      const studentEl: BoardElement = {
+        id: nanoid(),
+        type: "student_text",
+        content: studentContent,
+        attachments: messageAttachments,
+      };
       setElements((prev) => [...prev, studentEl]);
       setDockInput((prev) => ({ ...prev, text: "" }));
+      setAttachments([]);
       setAiState("thinking");
 
       // Build history including the newly added student element
       const history = buildHistory([...elementsRef.current, studentEl]);
       const messages = [...history];
 
-      streamToBoard(messages);
+      streamToBoard(messages, messageAttachments);
     },
-    [buildHistory, streamToBoard]
+    [attachments, buildHistory, streamToBoard]
   );
 
   // ── Retry sending the last student message ──────────────────────────────
@@ -626,8 +685,31 @@ function TeachPage() {
     onToggleRecording: () => {
       setDockInput((prev) => ({ ...prev, isRecording: !prev.isRecording }));
     },
-    onUploadFile: (file) => {
-      console.log("File uploaded:", file.name);
+    onUploadFile: async (file) => {
+      try {
+        const kind = getAttachmentKind(file);
+        const baseAttachment = {
+          id: nanoid(),
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          kind,
+        };
+
+        const attachment: UploadedAttachment =
+          kind === "text"
+            ? { ...baseAttachment, text: await readFileAsText(file) }
+            : { ...baseAttachment, dataUrl: await readFileAsDataUrl(file) };
+
+        setAttachments((prev) => [...prev, attachment]);
+        console.log("File uploaded:", file.name, file.type, file.size);
+      } catch (err) {
+        console.error("Failed to read uploaded file:", file.name, err);
+        setErrorText(`Could not read ${file.name}`);
+      }
+    },
+    onRemoveAttachment: (id) => {
+      setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
     },
   };
 
@@ -688,6 +770,7 @@ function TeachPage() {
       <BottomDock
         inputState={dockInput}
         actions={actions}
+        attachments={attachments}
         onInputChange={(text) => setDockInput((prev) => ({ ...prev, text }))}
         disabled={dockDisabled}
         placeholder={dockPlaceholder}

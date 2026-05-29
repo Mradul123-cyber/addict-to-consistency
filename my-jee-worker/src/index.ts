@@ -37,6 +37,16 @@ ELEMENT REFERENCE
 
 [ELEMENT]: {"type":"ai_highlight","latex":"\\\\boxed{final answer or key principle}","speak":"'So our final answer is...' or 'and this is the key result — ' then read it plainly"}
 
+[ELEMENT]: {"type":"ai_graph","title":"Short graph title","xLabel":"x-axis label","yLabel":"y-axis label","points":[{"x":0,"y":0,"label":"O"},{"x":1,"y":1},{"x":2,"y":4}],"speak":"Briefly say what the graph shows and what to notice first"}
+
+[ELEMENT]: {"type":"ai_semantic_diagram","view":"side_view","title":"Side view: line charge above surface","entities":[{"kind":"surface","label":"surface ABCD in x-y plane","widthLabel":"a/2","heightLabel":"a/2"},{"kind":"line_charge","label":"line charge parallel to y-axis","axis":"y","positionLabel":"z = (√3/2)a"},{"kind":"distance","label":"perpendicular distance = (√3/2)a"}],"speak":"Describe the side view naturally and point out the perpendicular distance"}
+
+[ELEMENT]: {"type":"ai_3d_scene","title":"3D setup: surface and line charge","objects":[{"kind":"axes"},{"kind":"plane","plane":"xy","label":"ABCD surface","size":[2.2,1.2],"position":[0,0,0],"color":"#34d399"},{"kind":"line_charge","axis":"y","label":"line charge","position":[0,0.75,0.9],"color":"#f59e0b"}],"camera":[3.2,2.5,4.0],"speak":"Use the 3D scene to show where the surface and line charge sit in space"}
+
+[ELEMENT]: {"type":"ai_diagram_v2","title":"Legacy raw SVG diagram only when semantic diagram is insufficient","objects":[{"kind":"rect","x":220,"y":170,"width":90,"height":55,"label":"block"},{"kind":"arrow","x":265,"y":170,"x2":265,"y2":90,"label":"N"}],"speak":"Briefly describe the visual as you draw it"}
+
+[ELEMENT]: {"type":"ai_3d_shape","shape":"axes","title":"Legacy simple 3D shape only when ai_3d_scene is unnecessary","vectors":[{"x":1,"y":0,"z":0,"label":"i"},{"x":0,"y":1,"z":0,"label":"j"}],"labels":["Use ai_3d_scene for real spatial setups"],"speak":"Briefly explain the 3D object or axes"}
+
 [ELEMENT]: {"type":"ai_warning","content":"Specific JEE trap — name exactly what students do wrong and why it fails","speak":"'Watch out — ' then the warning naturally spoken"}
 
 [ELEMENT]: {"type":"ai_tip","content":"Specific JEE shortcut — when it applies and boundary conditions","speak":"'Quick trick here — ' then the tip naturally spoken"}
@@ -46,6 +56,20 @@ ELEMENT REFERENCE
 [ELEMENT]: {"type":"ai_option","label":"A","content":"Option text — inline math allowed using \\(...\\)","speak":"'Option A — ' then read naturally"}
 
 [ELEMENT]: {"type":"ai_divider","speak":"'Alright, let's move on to something new'"}
+
+VISUAL ELEMENT RULES:
+— Use ai_graph when a relationship, curve, trend, or data points make the idea clearer.
+— Prefer ai_semantic_diagram over ai_diagram_v2 for 2D physics/math visuals. Describe the meaning; the renderer handles clean layout.
+— Use ai_semantic_diagram for side views, top views, front views, free-body diagrams, 2D coordinate setups, charge/surface setups, and simple geometry.
+— Use ai_3d_scene for true spatial intuition: 3D axes, planes, line charges, point charges, coordinate frames, rotations, robotics, rigid bodies, and vectors in space.
+— Use ai_diagram_v2 only as a legacy fallback when semantic diagrams cannot express the visual.
+— For ai_semantic_diagram, view must be one of: side_view, top_view, front_view, free_body, coordinate_2d.
+— For ai_semantic_diagram entities, kind must be one of: axis, surface, line_charge, point_charge, distance, vector, block, incline, label.
+— For ai_3d_scene objects, kind must be one of: axes, plane, line_charge, point, vector, cube, sphere.
+— For ai_3d_scene planes, plane must be xy, yz, or xz. Positions and vector endpoints use [x,y,z] numbers.
+— Coordinates for legacy ai_diagram_v2 are SVG board coordinates: x 0-640, y 0-360.
+— For ai_3d_shape, shape must be exactly one of: cube, sphere, cylinder, axes, rotation_axes.
+— Visuals must support teaching. Do not add visuals as decoration.
 
 ════════════════════════════════════
 SPEAK FIELD — HARD RULES
@@ -195,6 +219,114 @@ export interface Env {
 	AICREDITS_API_KEY: string;
 }
 
+type ChatMessage = { role: string; content: string };
+
+type UploadedAttachment = {
+	id: string;
+	name: string;
+	mimeType: string;
+	size: number;
+	kind: "image" | "pdf" | "text" | "file";
+	dataUrl?: string;
+	text?: string;
+};
+
+async function extractAttachmentContext(
+	attachments: UploadedAttachment[],
+	env: Env
+): Promise<string> {
+	if (attachments.length === 0) return "";
+
+	const metadata = attachments.map((attachment) => ({
+		name: attachment.name,
+		mimeType: attachment.mimeType,
+		size: attachment.size,
+		kind: attachment.kind,
+	}));
+
+	const textPayload = attachments
+		.filter((attachment) => attachment.text)
+		.map((attachment) => `File: ${attachment.name}\n${attachment.text?.slice(0, 16000)}`)
+		.join("\n\n---\n\n");
+
+	const content: any[] = [
+		{
+			type: "text",
+			text: `Read the uploaded learning material and extract context for a teacher.
+
+Return concise plain text with:
+- what the file/screenshot is about
+- detected problem statement or topic
+- equations, diagrams, given data, and student work
+- what the teacher should focus on first
+
+Attachment metadata:
+${JSON.stringify(metadata, null, 2)}
+
+Text file content, if any:
+${textPayload || "None"}`,
+		},
+	];
+
+	for (const attachment of attachments) {
+		if (!attachment.dataUrl) continue;
+
+		if (attachment.kind === "image") {
+			content.push({
+				type: "image_url",
+				image_url: { url: attachment.dataUrl },
+			});
+		} else if (attachment.kind === "pdf") {
+			content.push({
+				type: "file",
+				file: {
+					filename: attachment.name,
+					file_data: attachment.dataUrl,
+				},
+			});
+		}
+	}
+
+	try {
+		const response = await fetch("https://api.aicredits.in/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${env.AICREDITS_API_KEY}`,
+			},
+			body: JSON.stringify({
+				model: "anthropic/claude-haiku-4-5",
+				stream: false,
+				temperature: 0.2,
+				max_tokens: 1200,
+				messages: [
+					{
+						role: "user",
+						content,
+					},
+				],
+			}),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.log("Haiku attachment extraction failed:", response.status, errorText);
+			return `Uploaded attachments were provided, but automatic extraction failed. Use this metadata:\n${JSON.stringify(metadata, null, 2)}`;
+		}
+
+		const data = await response.json() as any;
+		const extracted = data.choices?.[0]?.message?.content;
+		if (typeof extracted === "string" && extracted.trim()) {
+			return extracted.trim();
+		}
+
+		return `Uploaded attachments were provided. Use this metadata:\n${JSON.stringify(metadata, null, 2)}`;
+	} catch (err) {
+		console.log("Haiku attachment extraction error:", err);
+		return `Uploaded attachments were provided, but automatic extraction errored. Use this metadata:\n${JSON.stringify(metadata, null, 2)}`;
+	}
+}
+
 // ─── Worker ───────────────────────────────────────────────────────────────────
 
 export default {
@@ -219,7 +351,10 @@ export default {
 		}
 
 		try {
-			const body = await request.json() as { messages: { role: string; content: string }[] };
+			const body = await request.json() as {
+				messages: ChatMessage[];
+				attachments?: UploadedAttachment[];
+			};
 
 			if (!body.messages?.length) {
 				return new Response("Messages array is required and cannot be empty", {
@@ -229,12 +364,35 @@ export default {
 			}
 
 			// Strip any system messages sent by the client (prevent prompt override)
+			const attachments = body.attachments ?? [];
 			const clientMessages = body.messages.filter((m) => m.role !== "system");
+			const attachmentContext = await extractAttachmentContext(attachments, env);
+			const lastUserIndex = clientMessages.findLastIndex((m) => m.role === "user");
+			const contextMessage = attachmentContext
+				? `Uploaded material context extracted by Claude Haiku:
+${attachmentContext}`
+				: "";
+			const clientMessagesWithContext = contextMessage
+				? lastUserIndex >= 0
+					? clientMessages.map((message, index) => {
+						const isLastUser = index === lastUserIndex;
+
+						if (!isLastUser) return message;
+
+						return {
+							...message,
+							content: `${message.content}
+
+${contextMessage}`,
+						};
+					})
+					: [...clientMessages, { role: "user", content: contextMessage }]
+				: clientMessages;
 
 			// Prepend server-authoritative system prompt
 			const messages = [
 				{ role: "system", content: SYSTEM_PROMPT },
-				...clientMessages,
+				...clientMessagesWithContext,
 			];
 
 			const payload = JSON.stringify({

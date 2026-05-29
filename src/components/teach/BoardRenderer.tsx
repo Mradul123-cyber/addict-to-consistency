@@ -1,6 +1,18 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { BoardElement, BoardMode } from "@/types/teach";
+import type { ReactNode } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type {
+  BoardElement,
+  BoardMode,
+  DiagramObject,
+  GraphPoint,
+  Scene3DObject,
+  SemanticDiagramEntity,
+  ShapeVector3D,
+  UploadedAttachment,
+} from "@/types/teach";
 import { BlockMath, InlineMath } from "react-katex";
 import "katex/dist/katex.min.css";
 
@@ -98,6 +110,792 @@ function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: bo
     >
       {done ? renderInlineContent(text) : renderBoldText(displayed, "typewriter")}
     </p>
+  );
+}
+
+function StudentAttachmentPreview({
+  attachments,
+  isBlackboard,
+}: {
+  attachments: UploadedAttachment[];
+  isBlackboard: boolean;
+}) {
+  const visualAttachments = attachments.filter(
+    (attachment) => attachment.kind === "image" || attachment.kind === "pdf"
+  );
+  const primary = visualAttachments[0];
+  if (!primary?.dataUrl) return null;
+
+  const stackCount = visualAttachments.length;
+  const showDocumentLayer = primary.kind === "pdf" || stackCount > 1;
+  const surface = isBlackboard
+    ? "border-white/12 bg-neutral-950/70 shadow-black/50"
+    : "border-neutral-200 bg-white shadow-neutral-300/60";
+
+  return (
+    <div className="relative my-3 w-full max-w-xl">
+      {stackCount > 2 && (
+        <div
+          className={`absolute inset-0 translate-x-4 translate-y-4 rotate-3 rounded-lg border ${surface}`}
+        />
+      )}
+      {showDocumentLayer && (
+        <div
+          className={`absolute inset-0 translate-x-2 translate-y-2 rotate-1 rounded-lg border ${surface}`}
+        />
+      )}
+
+      <div
+        className={`relative overflow-hidden rounded-lg border shadow-xl ${surface}`}
+      >
+        {primary.kind === "image" ? (
+          <img
+            src={primary.dataUrl}
+            alt=""
+            className="max-h-[26rem] w-full object-contain"
+          />
+        ) : (
+          <iframe
+            title="Uploaded PDF preview"
+            src={`${primary.dataUrl}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
+            className="h-[26rem] w-full bg-white"
+          />
+        )}
+
+        {stackCount > 1 && (
+          <div
+            className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${
+              isBlackboard
+                ? "bg-neutral-950/80 text-neutral-100 ring-1 ring-white/15"
+                : "bg-white/90 text-neutral-700 ring-1 ring-neutral-200"
+            }`}
+          >
+            +{stackCount - 1}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VisualFrame({
+  title,
+  isBlackboard,
+  children,
+}: {
+  title?: string;
+  isBlackboard: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="my-5 w-full max-w-3xl"
+    >
+      {title && (
+        <div
+          className={`mb-2 text-sm font-semibold ${
+            isBlackboard ? "text-neutral-300" : "text-neutral-600"
+          }`}
+        >
+          <PlainText text={title} />
+        </div>
+      )}
+      <div
+        className={`overflow-hidden rounded-lg border ${
+          isBlackboard
+            ? "border-white/10 bg-white/[0.03] text-neutral-100"
+            : "border-neutral-200 bg-white text-neutral-900"
+        }`}
+      >
+        {children}
+      </div>
+    </motion.div>
+  );
+}
+
+function clampPoint(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function colorFor(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  if (/^#[0-9a-f]{3,8}$/i.test(value)) return value;
+  return fallback;
+}
+
+function SemanticDiagramRenderer({
+  view,
+  entities,
+  title,
+  isBlackboard,
+}: {
+  view: "side_view" | "top_view" | "front_view" | "free_body" | "coordinate_2d";
+  entities: SemanticDiagramEntity[];
+  title?: string;
+  isBlackboard: boolean;
+}) {
+  const width = 640;
+  const height = 360;
+  const stroke = isBlackboard ? "#a7f3d0" : "#047857";
+  const accent = isBlackboard ? "#fbbf24" : "#d97706";
+  const text = isBlackboard ? "#f3f4f6" : "#111827";
+  const muted = isBlackboard ? "rgba(167,243,208,0.16)" : "rgba(16,185,129,0.12)";
+  const hasLineCharge = entities.some((entity) => entity.kind === "line_charge");
+  const hasSurface = entities.some((entity) => entity.kind === "surface");
+  const lineCharge = entities.find((entity) => entity.kind === "line_charge");
+  const surface = entities.find((entity) => entity.kind === "surface");
+  const distance = entities.find((entity) => entity.kind === "distance");
+  const vectors = entities.filter((entity) => entity.kind === "vector");
+  const labels = entities.filter((entity) => entity.kind === "label");
+
+  const renderAxes = () => (
+    <g>
+      <line x1="92" y1="280" x2="548" y2="280" stroke={text} strokeWidth="2" markerEnd="url(#semantic-arrow)" />
+      <line x1="112" y1="300" x2="112" y2="72" stroke={text} strokeWidth="2" markerEnd="url(#semantic-arrow)" />
+      <text x="558" y="286" fill={text} fontSize="18" fontWeight="800">x</text>
+      <text x="104" y="62" fill={text} fontSize="18" fontWeight="800">{view === "side_view" ? "z" : "y"}</text>
+    </g>
+  );
+
+  const renderLineChargeSideView = () => {
+    const surfaceY = 270;
+    const chargeX = 320;
+    const chargeY = 96;
+    const surfaceWidth = 330;
+    return (
+      <g>
+        <line x1={chargeX} y1="86" x2={chargeX} y2={surfaceY} stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+        <circle cx={chargeX} cy={chargeY} r="13" fill={isBlackboard ? "#06281f" : "#ecfdf5"} stroke={stroke} strokeWidth="4" />
+        <text x={chargeX - 92} y={chargeY - 18} fill={text} fontSize="16" fontWeight="800">
+          {lineCharge?.label || "line charge"}
+        </text>
+
+        <line x1={chargeX - surfaceWidth / 2} y1={surfaceY} x2={chargeX + surfaceWidth / 2} y2={surfaceY} stroke={stroke} strokeWidth="5" strokeLinecap="round" />
+        <path d={`M${chargeX - surfaceWidth / 2} ${surfaceY} q20 -9 40 0`} fill="none" stroke={stroke} strokeWidth="4" />
+        <path d={`M${chargeX + surfaceWidth / 2 - 40} ${surfaceY} q20 9 40 0`} fill="none" stroke={stroke} strokeWidth="4" />
+        <text x={chargeX - 116} y={surfaceY + 26} fill={text} fontSize="16" fontWeight="800">
+          {surface?.label || "surface"}
+        </text>
+
+        <line x1={chargeX} y1={chargeY + 18} x2={chargeX} y2={surfaceY - 16} stroke={accent} strokeWidth="3" markerEnd="url(#semantic-accent-arrow)" />
+        <text x={chargeX + 18} y={(chargeY + surfaceY) / 2} fill={text} fontSize="16" fontWeight="800">
+          {distance?.label || lineCharge?.positionLabel || "distance"}
+        </text>
+
+        <line x1={chargeX - surfaceWidth / 2} y1={surfaceY + 24} x2={chargeX} y2={surfaceY + 24} stroke={text} strokeWidth="2" markerStart="url(#semantic-arrow-start)" markerEnd="url(#semantic-arrow)" />
+        <line x1={chargeX} y1={surfaceY + 24} x2={chargeX + surfaceWidth / 2} y2={surfaceY + 24} stroke={text} strokeWidth="2" markerStart="url(#semantic-arrow-start)" markerEnd="url(#semantic-arrow)" />
+        <text x={chargeX - 86} y={surfaceY + 52} fill={text} fontSize="15" fontWeight="800">{surface?.widthLabel || "a/2"}</text>
+        <text x={chargeX + 72} y={surfaceY + 52} fill={text} fontSize="15" fontWeight="800">{surface?.heightLabel || "a/2"}</text>
+      </g>
+    );
+  };
+
+  const renderCoordinateSetup = () => (
+    <g>
+      <polygon points="260,230 420,190 520,230 360,278" fill={muted} stroke={stroke} strokeWidth="3" strokeLinejoin="round" />
+      <text x="376" y="244" fill={text} fontSize="17" fontWeight="800">{surface?.label || "surface in xy plane"}</text>
+      <line x1="360" y1="230" x2="560" y2="230" stroke={text} strokeWidth="3" markerEnd="url(#semantic-arrow)" />
+      <line x1="360" y1="230" x2="360" y2="70" stroke={text} strokeWidth="3" markerEnd="url(#semantic-arrow)" />
+      <line x1="360" y1="230" x2="240" y2="318" stroke={text} strokeWidth="3" markerEnd="url(#semantic-arrow)" />
+      <text x="568" y="236" fill={text} fontSize="18" fontWeight="900">y</text>
+      <text x="352" y="62" fill={text} fontSize="18" fontWeight="900">z</text>
+      <text x="224" y="332" fill={text} fontSize="18" fontWeight="900">x</text>
+      {hasLineCharge && (
+        <g>
+          <line x1="430" y1="96" x2="430" y2="254" stroke={accent} strokeWidth="5" strokeLinecap="round" />
+          <circle cx="430" cy="96" r="10" fill={accent} />
+          <text x="444" y="106" fill={text} fontSize="16" fontWeight="800">
+            {lineCharge?.label || "line charge"}
+          </text>
+          <text x="444" y="130" fill={text} fontSize="14" fontWeight="700">
+            {lineCharge?.positionLabel || "above xy plane"}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+
+  const renderFreeBody = () => {
+    const block = entities.find((entity) => entity.kind === "block");
+    return (
+      <g>
+        <rect x="278" y="150" width="88" height="64" rx="8" fill={muted} stroke={stroke} strokeWidth="4" />
+        <text x="304" y="188" fill={text} fontSize="16" fontWeight="900">{block?.label || "body"}</text>
+        {vectors.length > 0 ? vectors.map((vector, index) => {
+          const configs = {
+            up: [322, 150, 322, 80],
+            down: [322, 214, 322, 292],
+            left: [278, 182, 192, 182],
+            right: [366, 182, 452, 182],
+            in: [322, 182, 250, 112],
+            out: [322, 182, 394, 112],
+          } as const;
+          const [x1, y1, x2, y2] = configs[vector.direction || "up"];
+          return (
+            <g key={index}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={colorFor(vector.color, accent)} strokeWidth="4" markerEnd="url(#semantic-accent-arrow)" />
+              <text x={x2 + 8} y={y2 - 8} fill={text} fontSize="16" fontWeight="900">{vector.label}</text>
+            </g>
+          );
+        }) : null}
+      </g>
+    );
+  };
+
+  return (
+    <VisualFrame title={title} isBlackboard={isBlackboard}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+        <defs>
+          <marker id="semantic-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill={text} />
+          </marker>
+          <marker id="semantic-arrow-start" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M9,0 L9,6 L0,3 z" fill={text} />
+          </marker>
+          <marker id="semantic-accent-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill={accent} />
+          </marker>
+        </defs>
+
+        {(view === "side_view" || view === "front_view" || view === "coordinate_2d") && renderAxes()}
+        {view === "side_view" && hasLineCharge && hasSurface
+          ? renderLineChargeSideView()
+          : view === "free_body"
+            ? renderFreeBody()
+            : renderCoordinateSetup()}
+
+        {labels.map((label, index) => (
+          <text key={index} x="46" y={44 + index * 24} fill={colorFor(label.color, text)} fontSize="16" fontWeight="800">
+            {label.label}
+          </text>
+        ))}
+      </svg>
+    </VisualFrame>
+  );
+}
+
+function GraphRenderer({
+  points,
+  title,
+  xLabel,
+  yLabel,
+  isBlackboard,
+}: {
+  points: GraphPoint[];
+  title?: string;
+  xLabel?: string;
+  yLabel?: string;
+  isBlackboard: boolean;
+}) {
+  const safePoints = points.length > 0 ? points : [{ x: 0, y: 0 }];
+  const xs = safePoints.map((point) => point.x);
+  const ys = safePoints.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const xSpan = maxX - minX || 1;
+  const ySpan = maxY - minY || 1;
+  const width = 640;
+  const height = 360;
+  const pad = 48;
+  const plotWidth = width - pad * 2;
+  const plotHeight = height - pad * 2;
+  const axisColor = isBlackboard ? "#94a3b8" : "#64748b";
+  const gridColor = isBlackboard ? "rgba(148,163,184,0.18)" : "rgba(100,116,139,0.18)";
+  const lineColor = isBlackboard ? "#67e8f9" : "#0891b2";
+  const pointColor = isBlackboard ? "#fbbf24" : "#d97706";
+  const mapped = safePoints.map((point) => {
+    const x = pad + ((point.x - minX) / xSpan) * plotWidth;
+    const y = pad + (1 - (point.y - minY) / ySpan) * plotHeight;
+    return { ...point, sx: x, sy: y };
+  });
+  const polyline = mapped.map((point) => `${point.sx},${point.sy}`).join(" ");
+
+  return (
+    <VisualFrame title={title} isBlackboard={isBlackboard}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+        {[0, 1, 2, 3, 4].map((tick) => {
+          const x = pad + (tick / 4) * plotWidth;
+          const y = pad + (tick / 4) * plotHeight;
+          return (
+            <g key={tick}>
+              <line x1={x} y1={pad} x2={x} y2={height - pad} stroke={gridColor} />
+              <line x1={pad} y1={y} x2={width - pad} y2={y} stroke={gridColor} />
+            </g>
+          );
+        })}
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke={axisColor} strokeWidth="2" />
+        <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke={axisColor} strokeWidth="2" />
+        <motion.polyline
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          points={polyline}
+          fill="none"
+          stroke={lineColor}
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {mapped.map((point, index) => (
+          <g key={`${point.x}-${point.y}-${index}`}>
+            <circle cx={point.sx} cy={point.sy} r="5" fill={pointColor} />
+            {point.label && (
+              <text x={point.sx + 8} y={point.sy - 8} fill={axisColor} fontSize="14" fontWeight="700">
+                {point.label}
+              </text>
+            )}
+          </g>
+        ))}
+        {xLabel && (
+          <text x={width / 2} y={height - 12} textAnchor="middle" fill={axisColor} fontSize="14" fontWeight="700">
+            {xLabel}
+          </text>
+        )}
+        {yLabel && (
+          <text x="18" y={height / 2} textAnchor="middle" fill={axisColor} fontSize="14" fontWeight="700" transform={`rotate(-90 18 ${height / 2})`}>
+            {yLabel}
+          </text>
+        )}
+      </svg>
+    </VisualFrame>
+  );
+}
+
+function DiagramRenderer({
+  objects,
+  title,
+  isBlackboard,
+}: {
+  objects: DiagramObject[];
+  title?: string;
+  isBlackboard: boolean;
+}) {
+  const width = 640;
+  const height = 360;
+  const defaultStroke = isBlackboard ? "#a7f3d0" : "#047857";
+  const defaultText = isBlackboard ? "#e5e7eb" : "#111827";
+
+  const renderObject = (object: DiagramObject, index: number) => {
+    const stroke = colorFor(object.color, defaultStroke);
+    const x = clampPoint(object.x, 0, width);
+    const y = clampPoint(object.y, 0, height);
+    const x2 = clampPoint(object.x2 ?? object.x, 0, width);
+    const y2 = clampPoint(object.y2 ?? object.y, 0, height);
+
+    if (object.kind === "label") {
+      return (
+        <text key={index} x={x} y={y} fill={stroke || defaultText} fontSize="16" fontWeight="700">
+          {object.label}
+        </text>
+      );
+    }
+
+    if (object.kind === "point") {
+      return (
+        <g key={index}>
+          <circle cx={x} cy={y} r={object.r ?? 5} fill={stroke} />
+          {object.label && <text x={x + 9} y={y - 8} fill={defaultText} fontSize="14">{object.label}</text>}
+        </g>
+      );
+    }
+
+    if (object.kind === "circle") {
+      const r = object.r ?? 32;
+      return (
+        <g key={index}>
+          <circle cx={x} cy={y} r={r} fill="none" stroke={stroke} strokeWidth="3" />
+          {object.label && (
+            <text x={x + r + 8} y={y} fill={defaultText} fontSize="14" fontWeight="700">
+              {object.label}
+            </text>
+          )}
+        </g>
+      );
+    }
+
+    if (object.kind === "rect") {
+      const rectWidth = object.width ?? 80;
+      const rectHeight = object.height ?? 48;
+      return (
+        <g key={index}>
+          <rect
+            x={x}
+            y={y}
+            width={rectWidth}
+            height={rectHeight}
+            rx="6"
+            fill={isBlackboard ? "rgba(255,255,255,0.04)" : "rgba(16,185,129,0.08)"}
+            stroke={stroke}
+            strokeWidth="3"
+          />
+          {object.label && (
+            <text
+              x={x + rectWidth / 2}
+              y={y + rectHeight / 2 + 5}
+              textAnchor="middle"
+              fill={defaultText}
+              fontSize="14"
+              fontWeight="700"
+            >
+              {object.label}
+            </text>
+          )}
+        </g>
+      );
+    }
+
+    const markerEnd = object.kind === "arrow" || object.kind === "vector" ? "url(#diagram-arrow)" : undefined;
+    return (
+      <g key={index}>
+        <line x1={x} y1={y} x2={x2} y2={y2} stroke={stroke} strokeWidth={object.kind === "vector" ? 4 : 3} strokeLinecap="round" markerEnd={markerEnd} />
+        {object.label && (
+          <text x={(x + x2) / 2 + 8} y={(y + y2) / 2 - 8} fill={defaultText} fontSize="14" fontWeight="700">
+            {object.label}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  return (
+    <VisualFrame title={title} isBlackboard={isBlackboard}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+        <defs>
+          <marker id="diagram-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill={defaultStroke} />
+          </marker>
+        </defs>
+        {objects.map(renderObject)}
+      </svg>
+    </VisualFrame>
+  );
+}
+
+function project3D(vector: ShapeVector3D) {
+  return {
+    x: 320 + vector.x * 88 + vector.z * 42,
+    y: 220 - vector.y * 88 - vector.z * 28,
+  };
+}
+
+function Shape3DRenderer({
+  shape,
+  title,
+  vectors = [],
+  labels = [],
+  isBlackboard,
+}: {
+  shape: "cube" | "sphere" | "cylinder" | "axes" | "rotation_axes";
+  title?: string;
+  vectors?: ShapeVector3D[];
+  labels?: string[];
+  isBlackboard: boolean;
+}) {
+  const stroke = isBlackboard ? "#93c5fd" : "#2563eb";
+  const accent = isBlackboard ? "#fbbf24" : "#d97706";
+  const muted = isBlackboard ? "rgba(147,197,253,0.25)" : "rgba(37,99,235,0.16)";
+  const text = isBlackboard ? "#e5e7eb" : "#111827";
+  const width = 640;
+  const height = 360;
+
+  const renderBaseShape = () => {
+    if (shape === "sphere") {
+      return (
+        <g>
+          <circle cx="320" cy="180" r="86" fill={muted} stroke={stroke} strokeWidth="3" />
+          <ellipse cx="320" cy="180" rx="86" ry="24" fill="none" stroke={stroke} strokeWidth="2" opacity="0.8" />
+          <ellipse cx="320" cy="180" rx="28" ry="86" fill="none" stroke={stroke} strokeWidth="2" opacity="0.55" />
+        </g>
+      );
+    }
+
+    if (shape === "cylinder") {
+      return (
+        <g>
+          <ellipse cx="320" cy="110" rx="82" ry="28" fill={muted} stroke={stroke} strokeWidth="3" />
+          <path d="M238 110 V250" stroke={stroke} strokeWidth="3" />
+          <path d="M402 110 V250" stroke={stroke} strokeWidth="3" />
+          <ellipse cx="320" cy="250" rx="82" ry="28" fill="none" stroke={stroke} strokeWidth="3" />
+        </g>
+      );
+    }
+
+    if (shape === "cube") {
+      return (
+        <g fill={muted} stroke={stroke} strokeWidth="3">
+          <path d="M250 115 H390 V255 H250 Z" />
+          <path d="M250 115 L300 75 H440 L390 115 Z" />
+          <path d="M390 115 L440 75 V215 L390 255 Z" />
+        </g>
+      );
+    }
+
+    return null;
+  };
+
+  const axisVectors: ShapeVector3D[] =
+    shape === "axes" || shape === "rotation_axes"
+      ? [
+          { x: 1.2, y: 0, z: 0, label: "x", color: "#ef4444" },
+          { x: 0, y: 1.2, z: 0, label: "y", color: "#22c55e" },
+          { x: 0, y: 0, z: 1.2, label: "z", color: "#3b82f6" },
+        ]
+      : [];
+  const allVectors = [...axisVectors, ...vectors];
+
+  return (
+    <VisualFrame title={title} isBlackboard={isBlackboard}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+        <defs>
+          <marker id="shape-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill={accent} />
+          </marker>
+        </defs>
+        {renderBaseShape()}
+        {shape === "rotation_axes" && (
+          <ellipse cx="320" cy="205" rx="105" ry="34" fill="none" stroke={accent} strokeWidth="3" strokeDasharray="8 8" />
+        )}
+        {allVectors.map((vector, index) => {
+          const end = project3D(vector);
+          const color = colorFor(vector.color, accent);
+          return (
+            <g key={index}>
+              <line x1="320" y1="220" x2={end.x} y2={end.y} stroke={color} strokeWidth="4" strokeLinecap="round" markerEnd="url(#shape-arrow)" />
+              {vector.label && (
+                <text x={end.x + 8} y={end.y - 8} fill={text} fontSize="15" fontWeight="800">
+                  {vector.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {labels.map((label, index) => (
+          <text key={index} x="24" y={32 + index * 22} fill={text} fontSize="14" fontWeight="700">
+            {label}
+          </text>
+        ))}
+      </svg>
+    </VisualFrame>
+  );
+}
+
+function makeTextSprite(label: string, color: string) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  canvas.width = 512;
+  canvas.height = 128;
+  if (context) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.font = "700 42px Inter, Arial, sans-serif";
+    context.fillStyle = color;
+    context.fillText(label, 18, 72);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.6, 0.4, 1);
+  return sprite;
+}
+
+function addSceneLabel(scene: THREE.Scene, label: string | undefined, position: THREE.Vector3, color: string) {
+  if (!label) return;
+  const sprite = makeTextSprite(label, color);
+  sprite.position.copy(position);
+  scene.add(sprite);
+}
+
+function vectorFromTuple(tuple: [number, number, number] | undefined, fallback: [number, number, number]) {
+  const value = tuple ?? fallback;
+  return new THREE.Vector3(value[0], value[1], value[2]);
+}
+
+function physicsPoint(tuple: [number, number, number] | undefined, fallback: [number, number, number]) {
+  const value = tuple ?? fallback;
+  return new THREE.Vector3(value[0], value[2], value[1]);
+}
+
+function ThreeSceneRenderer({
+  title,
+  objects,
+  camera,
+  isBlackboard,
+}: {
+  title?: string;
+  objects: Scene3DObject[];
+  camera?: [number, number, number];
+  isBlackboard: boolean;
+}) {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    const width = mount.clientWidth || 720;
+    const height = 420;
+    const textColor = isBlackboard ? "#f3f4f6" : "#111827";
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(isBlackboard ? "#060807" : "#ffffff");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(width, height);
+    mount.appendChild(renderer.domElement);
+
+    const perspectiveCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    const cameraPosition = vectorFromTuple(camera, [3.5, 2.8, 4.2]);
+    perspectiveCamera.position.copy(cameraPosition);
+    perspectiveCamera.lookAt(0, 0, 0);
+
+    const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.55;
+
+    scene.add(new THREE.AmbientLight(0xffffff, isBlackboard ? 1.7 : 1.3));
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+    directionalLight.position.set(4, 5, 6);
+    scene.add(directionalLight);
+
+    const addArrow = (start: THREE.Vector3, end: THREE.Vector3, color: string, label?: string) => {
+      const direction = end.clone().sub(start);
+      const length = direction.length();
+      if (length === 0) return;
+      const arrow = new THREE.ArrowHelper(direction.normalize(), start, length, new THREE.Color(color), 0.18, 0.08);
+      scene.add(arrow);
+      addSceneLabel(scene, label, end.clone().add(new THREE.Vector3(0.08, 0.08, 0.08)), textColor);
+    };
+
+    const addAxes = () => {
+      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1.6, 0, 0), "#ef4444", "x");
+      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 1.6), "#22c55e", "y");
+      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.6, 0), "#3b82f6", "z");
+    };
+
+    const buildObject = (object: Scene3DObject) => {
+      const color = colorFor(object.color, isBlackboard ? "#67e8f9" : "#2563eb");
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        transparent: true,
+        opacity: object.kind === "plane" ? 0.34 : 0.82,
+        roughness: 0.55,
+        metalness: 0.08,
+        side: THREE.DoubleSide,
+      });
+      const position = physicsPoint(object.position, [0, 0, 0]);
+
+      if (object.kind === "axes") {
+        addAxes();
+        return;
+      }
+
+      if (object.kind === "plane") {
+        const size = object.size ?? [2.2, 1.4];
+        const geometry = new THREE.PlaneGeometry(size[0], size[1]);
+        const plane = new THREE.Mesh(geometry, material);
+        if (object.plane === "xy") plane.rotation.x = -Math.PI / 2;
+        if (object.plane === "yz") plane.rotation.y = Math.PI / 2;
+        if (object.plane === "xz") plane.rotation.z = 0;
+        plane.position.copy(position);
+        scene.add(plane);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: textColor }));
+        edges.rotation.copy(plane.rotation);
+        edges.position.copy(plane.position);
+        scene.add(edges);
+        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.12, 0.1)), textColor);
+        return;
+      }
+
+      if (object.kind === "line_charge") {
+        const axis = object.axis ?? "y";
+        const geometry = new THREE.CylinderGeometry(0.035, 0.035, 2.6, 24);
+        const line = new THREE.Mesh(geometry, material);
+        if (axis === "x") line.rotation.z = Math.PI / 2;
+        if (axis === "y") line.rotation.x = Math.PI / 2;
+        line.position.copy(position);
+        scene.add(line);
+        addSceneLabel(scene, object.label || "line charge", position.clone().add(new THREE.Vector3(0.12, 1.36, 0.12)), textColor);
+        return;
+      }
+
+      if (object.kind === "vector") {
+        addArrow(position, physicsPoint(object.end, [1, 0, 0]), color, object.label);
+        return;
+      }
+
+      if (object.kind === "point" || object.kind === "sphere") {
+        const geometry = new THREE.SphereGeometry(object.radius ?? 0.09, 32, 16);
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.copy(position);
+        scene.add(sphere);
+        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.1, 0.1)), textColor);
+        return;
+      }
+
+      if (object.kind === "cube") {
+        const size = object.size && object.size.length === 3 ? object.size : [0.6, 0.6, 0.6];
+        const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.copy(position);
+        scene.add(cube);
+        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.4, 0.1)), textColor);
+      }
+    };
+
+    if (!objects.some((object) => object.kind === "axes")) {
+      addAxes();
+    }
+    objects.forEach(buildObject);
+
+    let disposed = false;
+    const animate = () => {
+      if (disposed) return;
+      controls.update();
+      renderer.render(scene, perspectiveCamera);
+      requestAnimationFrame(animate);
+    };
+    animate();
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const nextWidth = entry?.contentRect.width || width;
+      renderer.setSize(nextWidth, height);
+      perspectiveCamera.aspect = nextWidth / height;
+      perspectiveCamera.updateProjectionMatrix();
+    });
+    resizeObserver.observe(mount);
+
+    return () => {
+      disposed = true;
+      resizeObserver.disconnect();
+      controls.dispose();
+      renderer.dispose();
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material.dispose());
+        }
+        if (object instanceof THREE.Sprite) {
+          object.material.map?.dispose();
+          object.material.dispose();
+        }
+      });
+      mount.removeChild(renderer.domElement);
+    };
+  }, [camera, isBlackboard, objects]);
+
+  return (
+    <VisualFrame title={title} isBlackboard={isBlackboard}>
+      <div ref={mountRef} className="h-[420px] w-full" />
+    </VisualFrame>
   );
 }
 
@@ -423,12 +1221,21 @@ export function BoardRenderer({
                 animate={{ opacity: 1, x: 0 }}
                 className="max-w-3xl my-4"
               >
-                <p
-                  className={`text-lg font-semibold tracking-wide antialiased transition-colors duration-300 ${isBlackboard ? "text-amber-300" : "text-amber-600"
-                    }`}
-                >
-                  <PlainText text={el.content} />
-                </p>
+                {el.attachments && el.attachments.length > 0 && (
+                  <StudentAttachmentPreview
+                    attachments={el.attachments}
+                    isBlackboard={isBlackboard}
+                  />
+                )}
+
+                {el.content.trim() && (
+                  <p
+                    className={`text-lg font-semibold tracking-wide antialiased transition-colors duration-300 ${isBlackboard ? "text-amber-300" : "text-amber-600"
+                      }`}
+                  >
+                    <PlainText text={el.content} />
+                  </p>
+                )}
               </motion.div>
             );
 
@@ -470,6 +1277,67 @@ export function BoardRenderer({
           // ── Math ─────────────────────────────────────────────────────────────
           case "ai_math":
             return <MathRenderer key={el.id} latex={el.latex} isBlackboard={isBlackboard} />;
+
+          // ── Semantic 2D diagram ─────────────────────────────────────────────
+          case "ai_semantic_diagram":
+            return (
+              <SemanticDiagramRenderer
+                key={el.id}
+                view={el.view}
+                title={el.title}
+                entities={el.entities}
+                isBlackboard={isBlackboard}
+              />
+            );
+
+          // ── Three.js 3D scene ───────────────────────────────────────────────
+          case "ai_3d_scene":
+            return (
+              <ThreeSceneRenderer
+                key={el.id}
+                title={el.title}
+                objects={el.objects}
+                camera={el.camera}
+                isBlackboard={isBlackboard}
+              />
+            );
+
+          // ── Graph ────────────────────────────────────────────────────────────
+          case "ai_graph":
+            return (
+              <GraphRenderer
+                key={el.id}
+                title={el.title}
+                xLabel={el.xLabel}
+                yLabel={el.yLabel}
+                points={el.points}
+                isBlackboard={isBlackboard}
+              />
+            );
+
+          // ── Structured diagram ───────────────────────────────────────────────
+          case "ai_diagram_v2":
+            return (
+              <DiagramRenderer
+                key={el.id}
+                title={el.title}
+                objects={el.objects}
+                isBlackboard={isBlackboard}
+              />
+            );
+
+          // ── Simple 3D visual ─────────────────────────────────────────────────
+          case "ai_3d_shape":
+            return (
+              <Shape3DRenderer
+                key={el.id}
+                shape={el.shape}
+                title={el.title}
+                vectors={el.vectors}
+                labels={el.labels}
+                isBlackboard={isBlackboard}
+              />
+            );
 
           // ── Highlight ────────────────────────────────────────────────────────
           case "ai_highlight":
