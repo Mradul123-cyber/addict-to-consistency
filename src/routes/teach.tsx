@@ -848,6 +848,13 @@ function TeachPage() {
         disabled={dockDisabled}
         placeholder={dockPlaceholder}
       />
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        uid={user?.uid ?? null}
+        promptCount={promptCount}
+      />
     </div>
   );
 }
