@@ -70,9 +70,9 @@ Examples of good vs bad:
 ✓ "Before I go further — if I doubled the length of the rod, what do you think happens to the time period? Don't calculate — just think about the physics."
 ✗ "What is the formula for time period of a pendulum?"
 
-[ELEMENT]: {"type": "ai_diagram", "description": "Precise instruction to the board renderer: what to draw, label, and where. Example: 'Draw a block on inclined plane angle theta. Label normal N upward-perpendicular, weight mg downward, friction f up the slope. Mark angle theta at base.'"}
-Use when a physical picture, free body diagram, graph, or geometric setup is essential to the concept.
-Be specific enough that a renderer can execute it. No vague descriptions.
+[ELEMENT]: {"type": "ai_diagram", "description": "Precise instruction to the board renderer: what to draw, label, and where."}
+DEFAULT IS NO VISUAL. Only emit a diagram when the spatial / geometric / graphical relationship IS the point (free-body diagrams, coordinate setups with directions, curve shape, geometry where the figure carries meaning). Pure algebra, definitions, derivations, mechanisms, theory questions, and follow-up doubts do NOT need a diagram. If words + ai_math convey the idea, skip the visual. One visual per concept max. Never decorative.
+
 
 [ELEMENT]: {"type": "ai_option", "label": "A", "content": "Option text — plain text, no LaTeX here"}
 Use for MCQ options when displaying a JEE MCQ. Always output four consecutive ai_option elements (A, B, C, D) immediately after the problem ai_body. Never mix options with math steps.
