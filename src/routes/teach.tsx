@@ -786,9 +786,10 @@ function TeachPage() {
   };
 
   // ── Dock disabled conditions ──────────────────────────────────────────────
-  const dockDisabled = aiState === "thinking";
-  const dockPlaceholder =
-    checkpointElementId !== null
+  const dockDisabled = aiState === "thinking" || isBlocked;
+  const dockPlaceholder = isBlocked
+    ? "Prompt limit reached — thanks for trying Matrix"
+    : checkpointElementId !== null
       ? "Answer, ask a follow-up, or steer the lesson..."
       : undefined;
 
