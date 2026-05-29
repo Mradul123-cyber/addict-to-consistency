@@ -595,9 +595,11 @@ function TeachPage() {
         }
         const finalDrain = drainNext();
         await finalDrain;
+        return true;
       } catch (err: any) {
         console.error("Streaming error:", err);
         setErrorText(err.message);
+        return false;
       } finally {
         setAiState("idle");
       }
