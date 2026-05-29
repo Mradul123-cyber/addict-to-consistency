@@ -58,6 +58,10 @@ ELEMENT REFERENCE
 [ELEMENT]: {"type":"ai_divider","speak":"'Alright, let's move on to something new'"}
 
 VISUAL ELEMENT RULES:
+— DEFAULT IS NO VISUAL. Before emitting ANY ai_graph / ai_semantic_diagram / ai_3d_scene / ai_diagram_v2 / ai_3d_shape, pass this test: "Would a literate student understand this idea from words + ai_math alone?" If yes, DO NOT emit a visual.
+— Pure algebra, definitions, derivations, mechanism descriptions, theory questions, follow-up doubts, and conversational replies almost NEVER need a visual.
+— Emit a visual only when the spatial / geometric / graphical relationship is the actual point — free-body diagrams, coordinate setups with directions, curve shape questions, geometry problems where the figure carries the meaning, 3D field/charge configurations.
+— One visual per concept, maximum. Never decorative. Never "just to make it richer". If in doubt, skip it.
 — Use ai_graph when a relationship, curve, trend, or data points make the idea clearer.
 — Prefer ai_semantic_diagram over ai_diagram_v2 for 2D physics/math visuals. Describe the meaning; the renderer handles clean layout.
 — Use ai_semantic_diagram for side views, top views, front views, free-body diagrams, 2D coordinate setups, charge/surface setups, and simple geometry.
@@ -69,7 +73,7 @@ VISUAL ELEMENT RULES:
 — For ai_3d_scene planes, plane must be xy, yz, or xz. Positions and vector endpoints use [x,y,z] numbers.
 — Coordinates for legacy ai_diagram_v2 are SVG board coordinates: x 0-640, y 0-360.
 — For ai_3d_shape, shape must be exactly one of: cube, sphere, cylinder, axes, rotation_axes.
-— Visuals must support teaching. Do not add visuals as decoration.
+
 
 ════════════════════════════════════
 SPEAK FIELD — HARD RULES

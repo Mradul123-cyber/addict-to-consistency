@@ -15,6 +15,14 @@ import type {
   UploadedAttachmentKind,
 } from "@/types/teach";
 import { nanoid } from "nanoid";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  TEACH_PROMPT_LIMIT,
+  getTeachPromptCount,
+  incrementTeachPromptCount,
+} from "@/lib/teach-quota";
+import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
+import { toast } from "sonner";
 
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 // NOTE: Worker now injects its own copy — this is kept for history reconstruction only.
@@ -70,9 +78,9 @@ Examples of good vs bad:
 ✓ "Before I go further — if I doubled the length of the rod, what do you think happens to the time period? Don't calculate — just think about the physics."
 ✗ "What is the formula for time period of a pendulum?"
 
-[ELEMENT]: {"type": "ai_diagram", "description": "Precise instruction to the board renderer: what to draw, label, and where. Example: 'Draw a block on inclined plane angle theta. Label normal N upward-perpendicular, weight mg downward, friction f up the slope. Mark angle theta at base.'"}
-Use when a physical picture, free body diagram, graph, or geometric setup is essential to the concept.
-Be specific enough that a renderer can execute it. No vague descriptions.
+[ELEMENT]: {"type": "ai_diagram", "description": "Precise instruction to the board renderer: what to draw, label, and where."}
+DEFAULT IS NO VISUAL. Only emit a diagram when the spatial / geometric / graphical relationship IS the point (free-body diagrams, coordinate setups with directions, curve shape, geometry where the figure carries meaning). Pure algebra, definitions, derivations, mechanisms, theory questions, and follow-up doubts do NOT need a diagram. If words + ai_math convey the idea, skip the visual. One visual per concept max. Never decorative.
+
 
 [ELEMENT]: {"type": "ai_option", "label": "A", "content": "Option text — plain text, no LaTeX here"}
 Use for MCQ options when displaying a JEE MCQ. Always output four consecutive ai_option elements (A, B, C, D) immediately after the problem ai_body. Never mix options with math steps.
@@ -296,6 +304,38 @@ function TeachPage() {
 
   // ── Error state ──
   const [errorText, setErrorText] = useState<string | null>(null);
+
+  // ── Prompt quota ──
+  const { user } = useAuth();
+  const [promptCount, setPromptCount] = useState<number>(0);
+  const [quotaLoaded, setQuotaLoaded] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const promptCountRef = useRef(0);
+  useEffect(() => {
+    promptCountRef.current = promptCount;
+  }, [promptCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.uid) {
+      setPromptCount(0);
+      setQuotaLoaded(true);
+      return;
+    }
+    setQuotaLoaded(false);
+    getTeachPromptCount(user.uid).then((n) => {
+      if (!cancelled) {
+        setPromptCount(n);
+        setQuotaLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  const remaining = Math.max(0, TEACH_PROMPT_LIMIT - promptCount);
+  const isBlocked = quotaLoaded && remaining <= 0;
 
   // Keep a stable ref so the async stream closure always reads fresh elements
   const elementsRef = useRef<BoardElement[]>([]);
@@ -555,9 +595,11 @@ function TeachPage() {
         }
         const finalDrain = drainNext();
         await finalDrain;
+        return true;
       } catch (err: any) {
         console.error("Streaming error:", err);
         setErrorText(err.message);
+        return false;
       } finally {
         setAiState("idle");
       }
@@ -607,6 +649,17 @@ function TeachPage() {
   // ── Send a message (from dock or checkpoint) ──────────────────────────────
   const sendMessage = useCallback(
     (text: string) => {
+      // Quota gate
+      if (quotaLoaded && promptCountRef.current >= TEACH_PROMPT_LIMIT) {
+        toast.error("You've used all 5 free prompts. Thanks for trying Matrix!");
+        setFeedbackOpen(true);
+        return;
+      }
+      if (!user?.uid) {
+        toast.error("Please sign in to use the AI teaching board.");
+        return;
+      }
+
       // Clear any prior error
       setErrorText(null);
 
@@ -635,9 +688,28 @@ function TeachPage() {
       const history = buildHistory([...elementsRef.current, studentEl]);
       const messages = [...history];
 
-      streamToBoard(messages, messageAttachments);
+      const uid = user.uid;
+      void (async () => {
+        const ok = await streamToBoard(messages, messageAttachments);
+        if (!ok) return;
+        try {
+          const next = await incrementTeachPromptCount(uid);
+          setPromptCount(next);
+          const remainingAfter = TEACH_PROMPT_LIMIT - next;
+          if (next >= TEACH_PROMPT_LIMIT) {
+            setFeedbackOpen(true);
+          } else if (remainingAfter === 2 || remainingAfter === 1) {
+            toast.warning(
+              `${remainingAfter} free prompt${remainingAfter === 1 ? "" : "s"} left`,
+              { description: "You have a limited number of teaching prompts." }
+            );
+          }
+        } catch {
+          // increment failed (offline / rules) — surface gracefully
+        }
+      })();
     },
-    [attachments, buildHistory, streamToBoard]
+    [attachments, buildHistory, streamToBoard, quotaLoaded, user?.uid]
   );
 
   // ── Retry sending the last student message ──────────────────────────────
@@ -714,9 +786,10 @@ function TeachPage() {
   };
 
   // ── Dock disabled conditions ──────────────────────────────────────────────
-  const dockDisabled = aiState === "thinking";
-  const dockPlaceholder =
-    checkpointElementId !== null
+  const dockDisabled = aiState === "thinking" || isBlocked;
+  const dockPlaceholder = isBlocked
+    ? "Prompt limit reached — thanks for trying Matrix"
+    : checkpointElementId !== null
       ? "Answer, ask a follow-up, or steer the lesson..."
       : undefined;
 
@@ -774,6 +847,13 @@ function TeachPage() {
         onInputChange={(text) => setDockInput((prev) => ({ ...prev, text }))}
         disabled={dockDisabled}
         placeholder={dockPlaceholder}
+      />
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        uid={user?.uid ?? null}
+        promptCount={promptCount}
       />
     </div>
   );
