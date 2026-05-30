@@ -46,6 +46,111 @@
   //     ]
   //   },
   // ]
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "mode": "ASCENDING" },
+        { "fieldPath": "chapterId", "mode": "ASCENDING" },
+        { "fieldPath": "difficulty", "mode": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reviewStatus", "mode": "ASCENDING" },
+        { "fieldPath": "uploadedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "mode": "ASCENDING" },
+        { "fieldPath": "examPattern", "mode": "ASCENDING" },
+        { "fieldPath": "difficulty", "mode": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chapterId", "mode": "ASCENDING" },
+        { "fieldPath": "difficulty", "mode": "ASCENDING" },
+        { "fieldPath": "reviewStatus", "mode": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "practiceAttempts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "mode": "ASCENDING" },
+        { "fieldPath": "chapterId", "mode": "ASCENDING" },
+        { "fieldPath": "submittedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "practiceAttempts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "mode": "ASCENDING" },
+        { "fieldPath": "isCorrect", "mode": "ASCENDING" },
+        { "fieldPath": "submittedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "practiceAttempts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "mode": "ASCENDING" },
+        { "fieldPath": "subject", "mode": "ASCENDING" },
+        { "fieldPath": "submittedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "testAttempts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "mode": "ASCENDING" },
+        { "fieldPath": "testType", "mode": "ASCENDING" },
+        { "fieldPath": "startedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "testAttempts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "userId", "mode": "ASCENDING" },
+        { "fieldPath": "submittedAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentUploads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "mode": "ASCENDING" },
+        { "fieldPath": "createdAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentUploads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uploadedBy", "mode": "ASCENDING" },
+        { "fieldPath": "createdAt", "mode": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentUploads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "mode": "ASCENDING" },
+        { "fieldPath": "contentType", "mode": "ASCENDING" },
+        { "fieldPath": "status", "mode": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

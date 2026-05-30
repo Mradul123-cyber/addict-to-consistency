@@ -3,10 +3,34 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      
+
       match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
+
+    // Admin config — admin list (any admin can read, only primary can write)
+    match /adminConfig/{doc} {
+      allow read: if request.auth != null
+        && (request.auth.uid == "1tPxrTKc0ZXFhRb0ZngWjp75zJ32"
+            || (resource != null && resource.data.adminUids.hasAny([request.auth.uid])));
+      allow write: if request.auth != null
+        && request.auth.uid == "1tPxrTKc0ZXFhRb0ZngWjp75zJ32";
+    }
+
+    // Admin-only content upload jobs (all admins)
+    match /contentUploads/{jobId} {
+      allow read, write: if request.auth != null
+        && (request.auth.uid == "1tPxrTKc0ZXFhRb0ZngWjp75zJ32"
+            || exists(/databases/$(database)/documents/adminConfig/settings)
+            && get(/databases/$(database)/documents/adminConfig/settings).data.adminUids.hasAny([request.auth.uid]));
+    }
+
+    // Public question bank (read by all authenticated users, write by admin only)
+    match /questions/{questionId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == "1tPxrTKc0ZXFhRb0ZngWjp75zJ32";
     }
   }
 }

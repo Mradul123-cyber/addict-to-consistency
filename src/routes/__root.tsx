@@ -17,6 +17,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/AuthGate";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { NotesChromeProvider } from "@/contexts/NotesChromeContext";
+import { AdminProvider } from "@/contexts/AdminContext";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -151,6 +152,7 @@ function RootComponent() {
         <AuthGate>
           <ProfileProvider>
             <OnboardingGate>
+              <AdminProvider>
               <NotesChromeProvider>
                 <div className="flex min-h-screen flex-col bg-background text-foreground">
                   <AppNav />
@@ -168,6 +170,7 @@ function RootComponent() {
                   </main>
                 </div>
               </NotesChromeProvider>
+              </AdminProvider>
             </OnboardingGate>
           </ProfileProvider>
         </AuthGate>

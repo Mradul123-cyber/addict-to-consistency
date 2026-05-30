@@ -221,6 +221,7 @@ INLINE MATH IN ai_body — ESCAPING RULES
 
 export interface Env {
 	AICREDITS_API_KEY: string;
+	GEMINI_API_KEY: string;
 }
 
 type ChatMessage = { role: string; content: string };
@@ -331,17 +332,234 @@ ${textPayload || "None"}`,
 	}
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CORS_HEADERS = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+};
+
+function corsJson(data: unknown, status = 200): Response {
+	return new Response(JSON.stringify(data), {
+		status,
+		headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+	});
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+	const bytes = new Uint8Array(buffer);
+	const chunkSize = 8192;
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+	}
+	return btoa(binary);
+}
+
+// ─── Gemini PDF Parser ────────────────────────────────────────────────────────
+
+const QUESTION_EXTRACTION_PROMPT = (subject: string, chapterId: string) => `
+You are a JEE (Joint Entrance Examination) content parser with expert knowledge of Physics, Chemistry, and Mathematics at the JEE Mains and Advanced level.
+
+Extract ALL questions from this PDF with PERFECT accuracy.
+
+Subject: ${subject}
+Chapter: ${chapterId}
+
+CRITICAL RULES:
+1. Never paraphrase — preserve exact wording of every question
+2. Convert all math to LaTeX: inline math uses \\(...\\), display math uses \\[...\\]
+3. Identify question type precisely:
+   - "mcq-single": exactly one correct option
+   - "mcq-multiple": one or more correct options (JEE Advanced style)
+   - "numerical": decimal answer (e.g., 9.8, 0.25)
+   - "integer": integer answer 0-9 (JEE Advanced integer type)
+4. Extract solutions verbatim if present, otherwise write a concise step-by-step solution
+5. Estimate difficulty: 1=easy, 2=moderate, 3=JEE Mains level, 4=hard, 5=JEE Advanced level
+6. Write 3 progressive hints (hint1 = subtle nudge, hint2 = concept pointer, hint3 = near-answer)
+7. Rate your confidence 0-1 for each question. Flag uncertain fields in uncertainFields array.
+
+Return a JSON object matching this exact schema:
+{
+  "questions": [
+    {
+      "statement": "exact question text with LaTeX math",
+      "type": "mcq-single" | "mcq-multiple" | "numerical" | "integer",
+      "options": [{"id": "A", "text": "option text with LaTeX"}, ...],
+      "correctAnswer": "A" or ["A","C"] for multiple correct,
+      "numericalAnswer": 9.8,
+      "tolerance": 0.1,
+      "hints": [
+        "Hint 1: subtle nudge without giving away the concept",
+        "Hint 2: point to the relevant concept or formula",
+        "Hint 3: near-complete guidance, almost gives the answer"
+      ],
+      "solution": {
+        "approach": "step-by-step solution in markdown with LaTeX",
+        "keyInsights": ["key point 1", "key point 2"],
+        "commonMistakes": ["common trap 1"]
+      },
+      "difficulty": 3,
+      "tags": ["kinematics", "projectile"],
+      "confidence": 0.95,
+      "uncertainFields": ["correctAnswer"]
+    }
+  ],
+  "totalExtracted": 25,
+  "overallConfidence": 0.92
+}
+
+Only return the JSON. No explanation, no markdown fences.
+`;
+
+const NOTES_EXTRACTION_PROMPT = (subject: string, chapterId: string) => `
+You are a JEE content expert. Extract and CONDENSE the notes from this PDF into concise revision material.
+
+Subject: ${subject}
+Chapter: ${chapterId}
+
+RULES:
+1. Create short, punchy sections — each section max 5-7 bullet points
+2. Preserve ALL formulas with LaTeX notation: \\(...\\) for inline, \\[...\\] for display
+3. Focus on JEE-relevant content only — skip lengthy proofs unless the result is important
+4. Group related concepts under clear section titles
+
+Return a JSON object matching this exact schema:
+{
+  "sections": [
+    {
+      "title": "Section Name",
+      "content": "2-3 sentence overview of this section",
+      "formulas": [
+        {"label": "Formula name (e.g. Newton's second law)", "formula": "LaTeX expression e.g. F = ma"}
+      ],
+      "keyPoints": ["bullet 1", "bullet 2"]
+    }
+  ],
+  "overallConfidence": 0.90
+}
+
+Only return the JSON. No explanation, no markdown fences.
+`;
+
+async function callGemini(pdfBase64: string, prompt: string, apiKey: string): Promise<any> {
+	const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+
+	const response = await fetch(url, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			contents: [{
+				parts: [
+					{
+						inline_data: {
+							mime_type: "application/pdf",
+							data: pdfBase64,
+						},
+					},
+					{ text: prompt },
+				],
+			}],
+			generationConfig: {
+				responseMimeType: "application/json",
+				temperature: 0.1,
+			},
+		}),
+	});
+
+	if (!response.ok) {
+		const err = await response.text();
+		throw new Error(`Gemini error ${response.status}: ${err}`);
+	}
+
+	const data = await response.json() as any;
+	const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+	if (!text) throw new Error("Empty response from Gemini");
+
+	return parseGeminiJson(text);
+}
+
+/**
+ * Gemini sometimes outputs LaTeX backslashes like \frac, \alpha as single
+ * backslashes inside JSON strings, which are invalid JSON escape sequences.
+ * This repairs them before parsing.
+ */
+function parseGeminiJson(text: string): any {
+	// First try direct parse
+	try {
+		return JSON.parse(text);
+	} catch {
+		// Fix bare backslashes that aren't valid JSON escapes:
+		// valid JSON escapes after \: " \ / b f n r t u
+		// Everything else (like \f from \frac, \a from \alpha) needs to be \\
+		const repaired = text.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+		try {
+			return JSON.parse(repaired);
+		} catch {
+			// Last resort: strip actual newlines inside string values
+			const cleaned = repaired.replace(/[\r\n]+/g, " ");
+			return JSON.parse(cleaned);
+		}
+	}
+}
+
+async function handleParsePdf(request: Request, env: Env): Promise<Response> {
+	const body = await request.json() as {
+		pdfUrl: string;
+		subject: string;
+		chapterId?: string;
+		contentType: "questions" | "notes";
+		jobId: string;
+		geminiApiKey?: string; // per-admin key; falls back to env secret
+	};
+
+	const { pdfUrl, subject, chapterId = "", contentType, jobId } = body;
+	const geminiKey = body.geminiApiKey?.trim() || env.GEMINI_API_KEY;
+
+	if (!pdfUrl || !subject || !contentType || !jobId) {
+		return corsJson({ error: "Missing required fields: pdfUrl, subject, contentType, jobId" }, 400);
+	}
+
+	// Fetch PDF from Firebase Storage
+	const pdfResponse = await fetch(pdfUrl);
+	if (!pdfResponse.ok) {
+		return corsJson({ error: `Failed to fetch PDF: ${pdfResponse.status}` }, 400);
+	}
+
+	const pdfBuffer = await pdfResponse.arrayBuffer();
+	const pdfSizeMB = pdfBuffer.byteLength / 1024 / 1024;
+
+	// 40MB limit — Gemini inline_data cap
+	if (pdfSizeMB > 40) {
+		return corsJson({ error: `PDF too large (${pdfSizeMB.toFixed(1)} MB). Max 40 MB.` }, 400);
+	}
+
+	const pdfBase64 = arrayBufferToBase64(pdfBuffer);
+
+	const prompt = contentType === "questions"
+		? QUESTION_EXTRACTION_PROMPT(subject, chapterId)
+		: NOTES_EXTRACTION_PROMPT(subject, chapterId);
+
+	try {
+		const extracted = await callGemini(pdfBase64, prompt, geminiKey);
+		return corsJson({ success: true, jobId, contentType, extracted });
+	} catch (err: any) {
+		return corsJson({ success: false, jobId, error: err.message }, 500);
+	}
+}
+
 // ─── Worker ───────────────────────────────────────────────────────────────────
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
+		const url = new URL(request.url);
+
 		// Handle CORS preflight
 		if (request.method === "OPTIONS") {
 			return new Response(null, {
 				headers: {
-					"Access-Control-Allow-Origin": "*",
-					"Access-Control-Allow-Methods": "POST, OPTIONS",
-					"Access-Control-Allow-Headers": "Content-Type",
+					...CORS_HEADERS,
 					"Access-Control-Max-Age": "86400",
 				},
 			});
@@ -352,6 +570,11 @@ export default {
 				status: 405,
 				headers: { "Access-Control-Allow-Origin": "*" },
 			});
+		}
+
+		// ── Route: PDF parsing ──
+		if (url.pathname === "/api/parse-pdf") {
+			return handleParsePdf(request, env);
 		}
 
 		try {

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Plus, ListChecks, CheckCheck, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -303,7 +303,14 @@ function ConceptSheet({ chapter, trackName, open, onClose, onResetRequest }: Con
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function MatrixPage() {
-  const { tracks } = useStore();
+  const { tracks, sessions } = useStore();
+  const minutesByChapter = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const s of sessions) {
+      if (s.chapterId) map[s.chapterId] = (map[s.chapterId] ?? 0) + s.minutes;
+    }
+    return map;
+  }, [sessions]);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<number>(0);
   const [draftNote, setDraftNote] = useState("");
@@ -489,6 +496,11 @@ function MatrixPage() {
                             {hasConcepts && (
                               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                                 {doneCount}/{c.concepts!.length}
+                              </span>
+                            )}
+                            {minutesByChapter[c.id] > 0 && (
+                              <span className="shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+                                {Math.round(minutesByChapter[c.id] / 60 * 10) / 10}h
                               </span>
                             )}
                           </div>

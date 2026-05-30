@@ -18,6 +18,8 @@ import { Route as LogRouteImport } from './routes/log'
 import { Route as FocusRouteImport } from './routes/focus'
 import { Route as AirgapRouteImport } from './routes/airgap'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminUploadRouteImport } from './routes/admin/upload'
+import { Route as AdminReviewJobIdRouteImport } from './routes/admin/review.$jobId'
 
 const TracksRoute = TracksRouteImport.update({
   id: '/tracks',
@@ -64,6 +66,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUploadRoute = AdminUploadRouteImport.update({
+  id: '/admin/upload',
+  path: '/admin/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminReviewJobIdRoute = AdminReviewJobIdRouteImport.update({
+  id: '/admin/review/$jobId',
+  path: '/admin/review/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +87,8 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
+  '/admin/upload': typeof AdminUploadRoute
+  '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +100,8 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
+  '/admin/upload': typeof AdminUploadRoute
+  '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +114,8 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
+  '/admin/upload': typeof AdminUploadRoute
+  '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +129,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
+    | '/admin/upload'
+    | '/admin/review/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +142,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
+    | '/admin/upload'
+    | '/admin/review/$jobId'
   id:
     | '__root__'
     | '/'
@@ -133,6 +155,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
+    | '/admin/upload'
+    | '/admin/review/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +169,8 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TeachRoute: typeof TeachRoute
   TracksRoute: typeof TracksRoute
+  AdminUploadRoute: typeof AdminUploadRoute
+  AdminReviewJobIdRoute: typeof AdminReviewJobIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +238,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/upload': {
+      id: '/admin/upload'
+      path: '/admin/upload'
+      fullPath: '/admin/upload'
+      preLoaderRoute: typeof AdminUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/review/$jobId': {
+      id: '/admin/review/$jobId'
+      path: '/admin/review/$jobId'
+      fullPath: '/admin/review/$jobId'
+      preLoaderRoute: typeof AdminReviewJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +265,8 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TeachRoute: TeachRoute,
   TracksRoute: TracksRoute,
+  AdminUploadRoute: AdminUploadRoute,
+  AdminReviewJobIdRoute: AdminReviewJobIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
