@@ -102,14 +102,14 @@ export function TeachBoard({
                 <RotateCcw size={15} />
               </button>
             )}
+            {onNewSession && (
+              <button onClick={onNewSession} title="New session" className={iconBtn}>
+                <Plus size={15} />
+              </button>
+            )}
             {onOpenHistory && (
               <button onClick={onOpenHistory} title="Session history" className={iconBtn}>
                 <History size={15} />
-              </button>
-            )}
-            {isFullscreen && onNewSession && (
-              <button onClick={onNewSession} title="New session" className={iconBtn}>
-                <Plus size={15} />
               </button>
             )}
             <AIStateVisualizer state={aiState} compact />

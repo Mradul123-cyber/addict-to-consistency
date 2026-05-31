@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { FileText, ImageIcon, Mic, MicOff, Paperclip, SendHorizonal, X, Mic2, ChevronDown, Check } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
 import { PRESET_VOICES, getSavedVoiceId, saveVoiceId } from "@/lib/tts";
@@ -13,7 +13,9 @@ export function BottomDock({
   placeholder = "Ask anything about this concept…",
 }: BottomDockProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
   const [showCustom, setShowCustom] = useState(false);
@@ -41,11 +43,69 @@ export function BottomDock({
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
+  // Auto-resize textarea when text changes (including voice input)
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 112) + "px";
+  }, [inputState.text]);
+
+  const handleToggleMic = () => {
+    if (inputState.isRecording) {
+      recognitionRef.current?.stop();
+      actions.onToggleRecording();
+      return;
+    }
+
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert("Voice input is not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    const recognition = new SR();
+    recognition.lang = "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    let finalTranscript = inputState.text;
+
+    recognition.onresult = (e: any) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalTranscript += (finalTranscript ? " " : "") + t.trim();
+        } else {
+          interim = t;
+        }
+      }
+      onInputChange(finalTranscript + (interim ? (finalTranscript ? " " : "") + interim : ""));
+    };
+
+    recognition.onend = () => {
+      onInputChange(finalTranscript);
+      actions.onToggleRecording();
+      recognitionRef.current = null;
+    };
+
+    recognition.onerror = () => {
+      actions.onToggleRecording();
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    actions.onToggleRecording();
+  };
+
   const handleSend = () => {
     const trimmed = inputState.text.trim();
     if ((!trimmed && attachments.length === 0) || disabled) return;
     actions.onSendMessage(trimmed);
     onInputChange("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -145,14 +205,19 @@ export function BottomDock({
 
           {/* Text input */}
           <textarea
+            ref={textareaRef}
             rows={1}
             value={inputState.text}
-            onChange={(e) => onInputChange(e.target.value)}
+            onChange={(e) => {
+              onInputChange(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 112) + "px";
+            }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}
-            className="resize-none bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
-            style={{ maxHeight: "7rem", lineHeight: "1.5rem" }}
+            className="resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
+            style={{ lineHeight: "1.5rem" }}
           />
         </div>
 
@@ -219,23 +284,22 @@ export function BottomDock({
         <motion.button
           type="button"
           whileTap={{ scale: 0.85 }}
-          onClick={actions.onToggleRecording}
+          onClick={handleToggleMic}
           disabled={disabled}
           aria-label={inputState.isRecording ? "Stop recording" : "Start voice input"}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all disabled:opacity-25 ${
-            inputState.isRecording
-              ? "bg-red-500/18 text-red-400 ring-1 ring-red-500/30"
-              : "text-white/35 hover:bg-white/8 hover:text-white/65"
-          }`}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all disabled:opacity-25 text-white/35 hover:bg-white/8 hover:text-white/65"
         >
           {inputState.isRecording ? (
-            <motion.span
-              animate={{ opacity: [1, 0.35, 1] }}
-              transition={{ duration: 0.9, repeat: Infinity }}
-              className="flex items-center"
-            >
-              <MicOff className="h-4 w-4" />
-            </motion.span>
+            <div className="flex items-end gap-[3px] h-4">
+              {[0, 1, 2, 3].map((i) => (
+                <motion.span
+                  key={i}
+                  className="w-[3px] rounded-full bg-red-400"
+                  animate={{ height: ["4px", "14px", "4px"] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.12, ease: "easeInOut" }}
+                />
+              ))}
+            </div>
           ) : (
             <Mic className="h-4 w-4" />
           )}

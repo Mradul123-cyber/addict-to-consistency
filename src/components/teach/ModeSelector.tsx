@@ -24,7 +24,7 @@ export const MODES: ModeConfig[] = [
   {
     id: "neet",
     name: "NEET",
-    persona: "The Doctor",
+    persona: "The Naturalist",
     description: "Medical entrance prep with conceptual clarity",
     subjects: "Biology · Chemistry · Physics",
     color: "border-emerald-500/30 hover:border-emerald-500/60",

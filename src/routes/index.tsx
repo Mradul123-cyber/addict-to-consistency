@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { StudyCalendar } from "@/components/StudyCalendar";
 import { TaskPanel } from "@/components/TaskPanel";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ChevronDown,
   ChevronUp,
@@ -257,6 +258,7 @@ function WeeklyDigestCard({
 
 function Dashboard() {
   const navigate = useNavigate();
+  const [cqDialogOpen, setCqDialogOpen] = useState(false);
   const { sessions, tracks, calendarTasks } = useStore();
   const { profile, targetDate } = useProfile();
   const days = targetDate ? daysUntilExam(targetDate) : 0;
@@ -313,6 +315,7 @@ function Dashboard() {
   const totalMinutes = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
 
   return (
+    <>
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
@@ -401,18 +404,13 @@ function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
               Consistency Quotient
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="inline-flex items-center text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-                      <Info className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-60 text-xs">
-                    Percentage of the last 7 days where you logged at least {dailyGoalMinutes} minutes of focused study.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <button
+                type="button"
+                onClick={() => setCqDialogOpen(true)}
+                className="inline-flex items-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -479,5 +477,36 @@ function Dashboard() {
         </div>
       </div>
     </div>
+
+      {/* CQ Info Dialog */}
+
+      <Dialog open={cqDialogOpen} onOpenChange={setCqDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Consistency Quotient (CQ)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              CQ measures what percentage of the last <span className="font-semibold text-foreground">7 days</span> you hit your daily study goal of <span className="font-semibold text-foreground">{dailyGoalMinutes} minutes</span> of focused study.
+            </p>
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+              <p className="font-semibold text-foreground text-xs uppercase tracking-wide">How it's calculated</p>
+              <p>CQ = (Days you hit your goal in last 7 days ÷ 7) × 100</p>
+              <p className="text-xs">Example: Hit goal 5 out of 7 days → CQ = <span className="font-semibold text-foreground">71%</span></p>
+            </div>
+            <div className="space-y-1.5">
+              <p className="font-semibold text-foreground text-xs uppercase tracking-wide">Score guide</p>
+              <div className="grid grid-cols-2 gap-1.5 text-xs">
+                <span className="text-green-600 dark:text-green-400 font-medium">100% — Perfect week</span>
+                <span className="text-blue-600 dark:text-blue-400 font-medium">71–99% — Strong</span>
+                <span className="text-amber-600 dark:text-amber-400 font-medium">43–70% — Building</span>
+                <span className="text-red-600 dark:text-red-400 font-medium">0–42% — Needs work</span>
+              </div>
+            </div>
+            <p className="text-xs">CQ starts tracking after your first 3 days of logged study.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

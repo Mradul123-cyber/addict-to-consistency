@@ -84,7 +84,7 @@ export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSes
   return (
     <>
       <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <SheetContent side="left" className="w-full sm:max-w-sm flex flex-col gap-0 p-0">
+        <SheetContent side="left" className="w-full sm:max-w-sm flex flex-col gap-0 p-0 z-[70]">
           <SheetHeader className="px-5 pt-5 pb-4 border-b">
             <SheetTitle className="flex items-center gap-2">
               <Clock className="h-4 w-4" />

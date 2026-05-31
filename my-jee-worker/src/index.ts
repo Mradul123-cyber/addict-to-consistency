@@ -134,11 +134,7 @@ ai_option:    {type, label:"A", content, speak} — for multiple choice
 ai_divider:   {type, speak} — speak: "alright, new topic"
 
 ── DIAGRAMS ─────────────────────────
-[ELEMENT]: {"type":"ai_semantic_diagram","view":"coordinate_2d","title":"Binary search tree","entities":[{"kind":"label","label":"root: 8"},{"kind":"label","label":"left: 3"},{"kind":"label","label":"right: 10"}],"speak":"here's the tree structure — root at top, smaller values left, larger right"}
-
-Use ai_semantic_diagram for: flowcharts, tree structures, system architecture, state diagrams.
-Use ai_graph for: time complexity curves, performance comparisons.
-No ai_math, no ai_3d_scene.`;
+NEVER use ai_graph, ai_math, ai_step, ai_3d_scene, ai_3d_build, or ai_semantic_diagram — these do not exist in Coding mode.`;
 
 const ELEMENT_REF_UPSC = `════════════════════════════════════
 ELEMENT REFERENCE
@@ -552,7 +548,6 @@ SUBJECT-SPECIFIC RULES
 — For algorithms: state the approach before writing the code.
 — For DSA: always discuss time and space complexity — it is non-negotiable.
 — For system design: establish requirements and constraints before the design.
-— Use ai_semantic_diagram for flowcharts, architectures, tree structures, and state diagrams.
 — Never show brute force without mentioning that a better approach exists.
 — When debugging: identify the first point of error and explain why it fails before giving the fix.
 
@@ -1031,6 +1026,23 @@ function parseGeminiJson(text: string): any {
 	}
 }
 
+async function handleValidateVoice(request: Request, env: Env): Promise<Response> {
+	if (request.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+	const { voiceId } = await request.json() as { voiceId: string };
+	if (!voiceId?.trim()) return corsJson({ valid: false }, 200);
+	// Tiny TTS call — 2 chars with turbo to validate any voice globally
+	const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId.trim()}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json", "xi-api-key": env.ELEVENLABS_API_KEY },
+		body: JSON.stringify({
+			text: "ok",
+			model_id: "eleven_turbo_v2_5",
+			voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+		}),
+	});
+	return corsJson({ valid: res.ok }, 200);
+}
+
 async function handleTTS(request: Request, env: Env): Promise<Response> {
 	if (request.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
 	const { text, voiceId } = await request.json() as { text: string; voiceId?: string };
@@ -1178,6 +1190,10 @@ export default {
 			return handleTTS(request, env);
 		}
 
+		if (url.pathname === "/api/validate-voice") {
+			return handleValidateVoice(request, env);
+		}
+
 		try {
 			const body = await request.json() as {
 				messages: ChatMessage[];
@@ -1221,27 +1237,37 @@ ${contextMessage}`,
 			// Select system prompt based on mode
 			const activePrompt = getSystemPrompt(body.mode ?? "jee");
 
-			// Prepend server-authoritative system prompt
-			const messages = [
-				{ role: "system", content: activePrompt },
-				...clientMessagesWithContext,
-			];
+			// Limit to last 5 messages to control token growth
+			const recentMessages = clientMessagesWithContext.slice(-5);
 
+			// Anthropic native format with cache_control on system prompt
 			const payload = JSON.stringify({
-				model: "anthropic/claude-sonnet-4-6",
-				stream: true,
-				temperature: 0.7,
+				model: "claude-sonnet-4-6",
 				max_tokens: 4096,
-				messages,
+				temperature: 0.7,
+				stream: true,
+				system: [
+					{
+						type: "text",
+						text: activePrompt,
+						cache_control: { type: "ephemeral" },
+					}
+				],
+				messages: recentMessages.map((m) => ({
+					role: m.role,
+					content: m.content,
+				})),
 			});
 
-			// Define helper to fetch with retry once on network error
 			const doFetch = async (): Promise<Response> => {
-				return await fetch("https://api.aicredits.in/v1/chat/completions", {
+				return await fetch("https://api.aicredits.in/v1/messages", {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
 						"Authorization": `Bearer ${env.AICREDITS_API_KEY}`,
+						"x-api-key": env.AICREDITS_API_KEY,
+						"anthropic-version": "2023-06-01",
+						"anthropic-beta": "prompt-caching-2024-07-31",
 					},
 					body: payload,
 				});
@@ -1251,7 +1277,6 @@ ${contextMessage}`,
 			try {
 				response = await doFetch();
 			} catch (firstErr) {
-				// Retry once on network error after 1500ms
 				await new Promise((resolve) => setTimeout(resolve, 1500));
 				response = await doFetch();
 			}
@@ -1264,8 +1289,48 @@ ${contextMessage}`,
 				});
 			}
 
-			// Pipe the SSE stream directly back to client
-			const { readable, writable } = new TransformStream();
+			// Transform Anthropic SSE → OpenAI SSE so frontend stays unchanged
+			let sseBuffer = "";
+			const { readable, writable } = new TransformStream({
+				transform(chunk, controller) {
+					sseBuffer += new TextDecoder().decode(chunk);
+					const lines = sseBuffer.split("\n");
+					sseBuffer = lines.pop() || "";
+
+					const output: string[] = [];
+					for (const line of lines) {
+						const trimmed = line.trim();
+						if (!trimmed || trimmed.startsWith("event:")) continue;
+						if (!trimmed.startsWith("data: ")) continue;
+						const raw = trimmed.slice(6);
+						if (raw === "[DONE]") continue;
+						try {
+							const data = JSON.parse(raw) as any;
+
+							// Log cache metrics from message_start
+							if (data.type === "message_start" && data.message?.usage) {
+								const u = data.message.usage;
+								console.log(`[Cache] read:${u.cache_read_input_tokens ?? 0} write:${u.cache_creation_input_tokens ?? 0} input:${u.input_tokens}`);
+							}
+
+							// Convert text delta to OpenAI format
+							if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+								output.push(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: data.delta.text }, finish_reason: null }] })}\n\n`);
+							}
+
+							// End of message → finish_reason + DONE
+							if (data.type === "message_delta" && data.delta?.stop_reason) {
+								output.push(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+								output.push("data: [DONE]\n\n");
+							}
+						} catch { /* skip malformed */ }
+					}
+
+					if (output.length > 0) {
+						controller.enqueue(new TextEncoder().encode(output.join("")));
+					}
+				}
+			});
 			response.body?.pipeTo(writable);
 
 			return new Response(readable, {

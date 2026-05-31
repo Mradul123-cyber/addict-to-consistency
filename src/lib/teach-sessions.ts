@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 export interface TeachSession {
   id: string;
   title: string;
+  mode?: string;
   elements: any[];
   createdAt: number;
   updatedAt: number;
@@ -21,12 +22,14 @@ export async function saveTeachSession(
   uid: string,
   sessionId: string,
   title: string,
-  elements: any[]
+  elements: any[],
+  mode?: string
 ): Promise<void> {
   const ref = doc(sessionsRef(uid), sessionId);
   await setDoc(ref, {
     title: title.slice(0, 80),
     elements,
+    ...(mode ? { mode } : {}),
     updatedAt: Date.now(),
   }, { merge: true });
 }
@@ -35,12 +38,14 @@ export async function createTeachSession(
   uid: string,
   sessionId: string,
   title: string,
-  elements: any[]
+  elements: any[],
+  mode?: string
 ): Promise<void> {
   const ref = doc(sessionsRef(uid), sessionId);
   await setDoc(ref, {
     title: title.slice(0, 80),
     elements,
+    ...(mode ? { mode } : {}),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   });

@@ -314,6 +314,8 @@ function TeachPage() {
 
   // ── Mode ──
   const [mode, setMode] = useState<TeachMode | null>(null);
+  const modeRef = useRef<TeachMode | null>(null);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   // ── Session history ──
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -484,7 +486,7 @@ function TeachPage() {
         const response = await fetch(workerUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages, attachments: requestAttachments, mode: mode ?? "jee" }),
+          body: JSON.stringify({ messages, attachments: requestAttachments, mode: modeRef.current ?? "jee" }),
         });
 
         if (!response.ok) {
@@ -751,9 +753,9 @@ function TeachPage() {
           const sessionId = currentSessionIdRef.current ?? nanoid();
           if (!currentSessionIdRef.current) {
             setCurrentSessionId(sessionId);
-            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current);
+            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee");
           } else {
-            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current);
+            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee");
           }
         } catch (e) {
           console.error("Failed to save session:", e);
@@ -824,7 +826,11 @@ function TeachPage() {
   const handleResumeLive = useCallback(() => {
     drainPausedRef.current = false;
     setIsPaused(false);
-    void drainNext(); // continue from pending queue
+    void (async () => {
+      setAiState("speaking");
+      await drainNext();
+      setAiState("idle");
+    })();
   }, [drainNext]);
 
   const handleResume = useCallback(async () => {
@@ -901,7 +907,7 @@ function TeachPage() {
     stopAllTypewriters();
     setElements(session.elements ?? []);
     setCurrentSessionId(session.id);
-    setMode((session as any).mode ?? null);
+    setMode((session.mode as any) ?? "jee");
     setErrorText(null);
     setCheckpointElementId(null);
     toast.success(`Loaded: "${session.title}"`);
