@@ -1,4 +1,6 @@
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus, vs } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState, useRef, useEffect, useCallback } from "react";
 // Global flag — when true, all TypewriterText instances instantly complete
 const typewriterStopFlag = { current: false };
@@ -1628,6 +1630,41 @@ export function BoardRenderer({
                       <PlainText text={el.description} />
                     </p>
                   </div>
+                </div>
+              </motion.div>
+            );
+
+          // ── Code block ───────────────────────────────────────────────────────
+          case "ai_code":
+            return (
+              <motion.div
+                key={el.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="my-4 max-w-3xl w-full"
+              >
+                {el.label && (
+                  <p className={`mb-1.5 text-xs font-semibold uppercase tracking-wide ${isBlackboard ? "text-neutral-400" : "text-neutral-500"}`}>
+                    {el.label}
+                  </p>
+                )}
+                <div className="rounded-xl overflow-hidden border border-white/10 text-sm">
+                  <SyntaxHighlighter
+                    language={el.language || "text"}
+                    style={isBlackboard ? vscDarkPlus : vs}
+                    customStyle={{
+                      margin: 0,
+                      padding: "1rem 1.25rem",
+                      background: isBlackboard ? "#0d1117" : "#f6f8fa",
+                      fontSize: "0.85rem",
+                      lineHeight: 1.6,
+                    }}
+                    showLineNumbers={(el.code.split("\n").length > 4)}
+                    wrapLines
+                  >
+                    {el.code}
+                  </SyntaxHighlighter>
                 </div>
               </motion.div>
             );

@@ -23,6 +23,8 @@ import {
 } from "@/lib/teach-quota";
 import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
 import { SessionHistory } from "@/components/teach/SessionHistory";
+import { ModeSelector, getModeConfig } from "@/components/teach/ModeSelector";
+import type { TeachMode } from "@/types/teach";
 import { createTeachSession, saveTeachSession, type TeachSession } from "@/lib/teach-sessions";
 import { setReplayMode } from "@/lib/tts";
 import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
@@ -310,6 +312,9 @@ function TeachPage() {
   // ── Error state ──
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  // ── Mode ──
+  const [mode, setMode] = useState<TeachMode | null>(null);
+
   // ── Session history ──
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -479,7 +484,7 @@ function TeachPage() {
         const response = await fetch(workerUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages, attachments: requestAttachments }),
+          body: JSON.stringify({ messages, attachments: requestAttachments, mode: mode ?? "jee" }),
         });
 
         if (!response.ok) {
@@ -882,6 +887,7 @@ function TeachPage() {
     setIsReplaying(false);
     setIsPaused(false);
     setReplayMode(false);
+    setMode(null);
     setErrorText(null);
     setCheckpointElementId(null);
     setAttachments([]);
@@ -892,13 +898,12 @@ function TeachPage() {
   const handleLoadSession = useCallback((session: TeachSession) => {
     stopCurrentSpeech();
     pendingQueueRef.current = [];
-    setBoardInstant(true);
+    stopAllTypewriters();
     setElements(session.elements ?? []);
     setCurrentSessionId(session.id);
+    setMode((session as any).mode ?? null);
     setErrorText(null);
     setCheckpointElementId(null);
-    // Reset instant after render so new AI responses animate normally
-    setTimeout(() => setBoardInstant(false), 100);
     toast.success(`Loaded: "${session.title}"`);
   }, []);
 
@@ -976,7 +981,7 @@ function TeachPage() {
   };
 
   // ── Dock disabled conditions ──────────────────────────────────────────────
-  const dockDisabled = aiState === "thinking" || isBlocked;
+  const dockDisabled = aiState === "thinking" || isBlocked || mode === null;
   const dockPlaceholder = isBlocked
     ? "Prompt limit reached — thanks for trying Matrix"
     : checkpointElementId !== null
@@ -993,6 +998,7 @@ function TeachPage() {
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
         ttsEnabled={ttsEnabled}
+        modeBadge={mode ? `${getModeConfig(mode).name} · ${getModeConfig(mode).persona}` : undefined}
         onOpenHistory={() => setHistoryOpen(true)}
         onNewSession={handleNewSession}
         onReplay={elements.length > 0 && !isReplaying ? handleReplay : undefined}
@@ -1014,10 +1020,17 @@ function TeachPage() {
           });
         }}
       >
-        {elements.length === 0 ? (
-          <p className="py-20 text-center text-sm font-light h-full opacity-35 max-w-sm mx-auto">
-            Type a concept query in the dock below to draw the whiteboard animations…
-          </p>
+        {elements.length === 0 && mode === null ? (
+          <ModeSelector
+            onSelect={setMode}
+            isBlackboard={boardConfig.mode === "blackboard"}
+          />
+        ) : elements.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <p className="text-sm font-light opacity-35">
+              {getModeConfig(mode!).persona} is ready — ask anything
+            </p>
+          </div>
         ) : (
           <div className="w-full">
             <BoardRenderer

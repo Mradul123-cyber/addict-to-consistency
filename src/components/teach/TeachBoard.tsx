@@ -30,12 +30,14 @@ export function TeachBoard({
   onReplay,
   onStopReplay,
   onResume,
+  modeBadge,
 }: TeachBoardProps & {
   onOpenHistory?: () => void;
   onNewSession?: () => void;
   onReplay?: () => void;
   onStopReplay?: () => void;
   onResume?: () => void;
+  modeBadge?: string;
 }) {
   const isBlackboard = config.mode === "blackboard";
   const styles = BOARD_STYLES[config.mode];
@@ -66,6 +68,13 @@ export function TeachBoard({
           isBlackboard ? "border-white/5 bg-black/15" : "border-black/5 bg-white/30"
         }`}>
           <div className="flex items-center gap-3">
+            {modeBadge && (
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                isBlackboard ? "border-white/15 text-neutral-300" : "border-black/10 text-neutral-600"
+              }`}>
+                {modeBadge}
+              </span>
+            )}
             <button onClick={onToggleBoardMode} title={isBlackboard ? "Switch to Whiteboard" : "Switch to Blackboard"} className={iconBtn}>
               {isBlackboard ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-600" />}
             </button>
@@ -93,7 +102,7 @@ export function TeachBoard({
                 <RotateCcw size={15} />
               </button>
             )}
-            {isFullscreen && onOpenHistory && (
+            {onOpenHistory && (
               <button onClick={onOpenHistory} title="Session history" className={iconBtn}>
                 <History size={15} />
               </button>

@@ -147,7 +147,10 @@ export type BoardElement = (
     }
   | { id: string; type: "ai_option"; label: string; content: string }
   | { id: string; type: "ai_divider" }
+  | { id: string; type: "ai_code"; language: string; code: string; label?: string }
 ) & { speak?: string };
+
+export type TeachMode = "jee" | "neet" | "general" | "coding" | "upsc" | "marketing";
 
 // ─── Teaching Session ─────────────────────────────────────────────────────────
 

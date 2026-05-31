@@ -252,6 +252,15 @@ INLINE MATH IN ai_body — ESCAPING RULES
 — Every LaTeX command like \frac becomes \\frac, \sqrt becomes \\sqrt.
 — If you are unsure about escaping, move the math to a separate ai_math element instead.`;
 
+// ─── Mode → System Prompt selector ────────────────────────────────────────────
+// Prompts for non-JEE modes will be finalized together — these are stubs.
+
+function getSystemPrompt(mode: string): string {
+	if (mode === "jee") return SYSTEM_PROMPT;
+	// All other modes use JEE prompt as base for now — full prompts coming soon
+	return SYSTEM_PROMPT;
+}
+
 // ─── Env interface ─────────────────────────────────────────────────────────────
 
 export interface Env {
@@ -704,6 +713,7 @@ export default {
 			const body = await request.json() as {
 				messages: ChatMessage[];
 				attachments?: UploadedAttachment[];
+				mode?: string;
 			};
 
 			if (!body.messages?.length) {
@@ -739,9 +749,12 @@ ${contextMessage}`,
 					: [...clientMessages, { role: "user", content: contextMessage }]
 				: clientMessages;
 
+			// Select system prompt based on mode
+			const activePrompt = getSystemPrompt(body.mode ?? "jee");
+
 			// Prepend server-authoritative system prompt
 			const messages = [
-				{ role: "system", content: SYSTEM_PROMPT },
+				{ role: "system", content: activePrompt },
 				...clientMessagesWithContext,
 			];
 
