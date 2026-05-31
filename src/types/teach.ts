@@ -78,11 +78,15 @@ export interface Scene3DObject {
   label?: string;
   axis?: "x" | "y" | "z";
   plane?: "xy" | "yz" | "xz";
+  normal?: [number, number, number]; // plane normal for diagonal orientations e.g. (1,1,0)
   position?: [number, number, number];
   end?: [number, number, number];
   size?: [number, number] | [number, number, number];
   radius?: number;
   color?: string;
+  wireframe?: boolean;  // cube/sphere rendered as edges only
+  dashed?: boolean;     // vector rendered as dashed helper line
+  opacity?: number;     // 0.0–1.0 override
 }
 
 // ─── Board Element Types ──────────────────────────────────────────────────────
@@ -108,9 +112,16 @@ export type BoardElement = (
   | {
       id: string;
       type: "ai_3d_scene";
+      sceneId?: string;
       title?: string;
       objects: Scene3DObject[];
       camera?: [number, number, number];
+    }
+  | {
+      id: string;
+      type: "ai_3d_build";
+      sceneId: string;
+      add: Scene3DObject[];
     }
   | {
       id: string;

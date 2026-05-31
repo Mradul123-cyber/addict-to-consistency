@@ -65,7 +65,7 @@ const links = [
   { to: "/focus", label: "Focus" },
   { to: "/airgap", label: "Airgap" },
   { to: "/matrix", label: "Matrix" },
-  { to: "/teach", label: "Teach" },
+  { to: "/teach", label: "Studio" },
 ] as const;
 
 const navLinkClass =

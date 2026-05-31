@@ -1,5 +1,17 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { useState, useRef, useEffect, useCallback } from "react";
+// Global flag — when true, all TypewriterText instances instantly complete
+const typewriterStopFlag = { current: false };
+export function stopAllTypewriters() {
+  typewriterStopFlag.current = true;
+  setTimeout(() => { typewriterStopFlag.current = false; }, 300);
+}
+
+// ai_3d_build sceneId → live scene controls
+const sceneRegistry = new Map<string, { add: (obj: import("@/types/teach").Scene3DObject) => void; render: () => void; capture: () => string | null }>();
+export function captureScene(sceneId: string): string | null {
+  return sceneRegistry.get(sceneId)?.capture() ?? null;
+}
 import type { ReactNode } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -59,11 +71,12 @@ function PlainText({ text }: { text: string }) {
   return <>{renderInlineContent(text)}</>;
 }
 
-function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: boolean }) {
-  const [displayed, setDisplayed] = useState("");
-  const [done, setDone] = useState(false);
+function TypewriterText({ text, isBlackboard, instant }: { text: string; isBlackboard: boolean; instant?: boolean }) {
+  const [displayed, setDisplayed] = useState(instant ? text : "");
+  const [done, setDone] = useState(instant ?? false);
 
   useEffect(() => {
+    if (instant) { setDisplayed(text); setDone(true); return; }
     setDisplayed("");
     setDone(false);
     let active = true;
@@ -72,6 +85,12 @@ function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: bo
 
     const typeChar = () => {
       if (!active) return;
+      // Global stop — instantly show full text
+      if (typewriterStopFlag.current) {
+        setDisplayed(text);
+        setDone(true);
+        return;
+      }
       if (index >= text.length) {
         setDone(true);
         return;
@@ -100,7 +119,7 @@ function TypewriterText({ text, isBlackboard }: { text: string; isBlackboard: bo
       active = false;
       if (timerId) clearTimeout(timerId);
     };
-  }, [text]);
+  }, [text, instant]);
 
   return (
     <p
@@ -686,20 +705,22 @@ function Shape3DRenderer({
 
 function makeTextSprite(label: string, color: string) {
   const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  canvas.width = 512;
+  const font = "700 40px Inter, Arial, sans-serif";
   canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (ctx) { ctx.font = font; canvas.width = Math.max(512, Math.ceil(ctx.measureText(label).width) + 40); }
+  else { canvas.width = 768; }
+  const context = canvas.getContext("2d");
   if (context) {
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = "700 42px Inter, Arial, sans-serif";
+    context.font = font;
     context.fillStyle = color;
     context.fillText(label, 18, 72);
   }
-
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.6, 0.4, 1);
+  sprite.scale.set((canvas.width / 512) * 1.6, 0.4, 1);
   return sprite;
 }
 
@@ -725,17 +746,34 @@ function ThreeSceneRenderer({
   objects,
   camera,
   isBlackboard,
+  sceneId,
 }: {
   title?: string;
   objects: Scene3DObject[];
   camera?: [number, number, number];
   isBlackboard: boolean;
+  sceneId?: string;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const addObjectRef = useRef<((obj: Scene3DObject) => void) | null>(null);
+  const addAxesRef = useRef<(() => void) | null>(null);
+  const renderRef = useRef<(() => void) | null>(null);
+  const builtCountRef = useRef(0);
+  const axesAddedRef = useRef(false);
+  const [sceneVersion, setSceneVersion] = useState(0);
 
+  const [cx = 3.5, cy = 2.8, cz = 4.2] = camera ?? [];
+
+  // ── EFFECT 1: Scene infrastructure (recreate only when theme/camera changes) ──
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+
+    builtCountRef.current = 0;
+    axesAddedRef.current = false;
+    addObjectRef.current = null;
+    addAxesRef.current = null;
+    renderRef.current = null;
 
     const width = mount.clientWidth || 720;
     const height = 420;
@@ -743,14 +781,13 @@ function ThreeSceneRenderer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(isBlackboard ? "#060807" : "#ffffff");
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     mount.appendChild(renderer.domElement);
 
     const perspectiveCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    const cameraPosition = vectorFromTuple(camera, [3.5, 2.8, 4.2]);
-    perspectiveCamera.position.copy(cameraPosition);
+    perspectiveCamera.position.set(cx, cy, cz);
     perspectiveCamera.lookAt(0, 0, 0);
 
     const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
@@ -760,99 +797,127 @@ function ThreeSceneRenderer({
     controls.autoRotateSpeed = 0.55;
 
     scene.add(new THREE.AmbientLight(0xffffff, isBlackboard ? 1.7 : 1.3));
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
-    directionalLight.position.set(4, 5, 6);
-    scene.add(directionalLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    dirLight.position.set(4, 5, 6);
+    scene.add(dirLight);
 
-    const addArrow = (start: THREE.Vector3, end: THREE.Vector3, color: string, label?: string) => {
-      const direction = end.clone().sub(start);
-      const length = direction.length();
-      if (length === 0) return;
-      const arrow = new THREE.ArrowHelper(direction.normalize(), start, length, new THREE.Color(color), 0.18, 0.08);
-      scene.add(arrow);
-      addSceneLabel(scene, label, end.clone().add(new THREE.Vector3(0.08, 0.08, 0.08)), textColor);
+    const addArrow = (start: THREE.Vector3, end: THREE.Vector3, color: string, label?: string, dashed?: boolean) => {
+      const dir = end.clone().sub(start);
+      const len = dir.length();
+      if (len === 0) return;
+      if (dashed) {
+        const pts = [start.clone(), end.clone()];
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineDashedMaterial({ color: new THREE.Color(color), dashSize: 0.08, gapSize: 0.04 });
+        const line = new THREE.Line(geo, mat);
+        line.computeLineDistances();
+        scene.add(line);
+      } else {
+        const arrow = new THREE.ArrowHelper(dir.normalize(), start, len, new THREE.Color(color), 0.18, 0.08);
+        scene.add(arrow);
+      }
+      if (label) addSceneLabel(scene, label, end.clone().add(new THREE.Vector3(0.08, 0.08, 0.08)), textColor);
     };
 
     const addAxes = () => {
-      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1.6, 0, 0), "#ef4444", "x");
-      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 1.6), "#22c55e", "y");
-      addArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.6, 0), "#3b82f6", "z");
+      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(1.6,0,0), "#ef4444", "x");
+      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,1.6), "#22c55e", "y");
+      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,1.6,0), "#3b82f6", "z");
     };
 
     const buildObject = (object: Scene3DObject) => {
       const color = colorFor(object.color, isBlackboard ? "#67e8f9" : "#2563eb");
-      const material = new THREE.MeshStandardMaterial({
-        color,
-        transparent: true,
-        opacity: object.kind === "plane" ? 0.34 : 0.82,
-        roughness: 0.55,
-        metalness: 0.08,
-        side: THREE.DoubleSide,
-      });
+      const opacity = object.opacity ?? (object.kind === "plane" ? 0.34 : 0.82);
       const position = physicsPoint(object.position, [0, 0, 0]);
 
-      if (object.kind === "axes") {
-        addAxes();
-        return;
-      }
+      if (object.kind === "axes") { addAxes(); return; }
 
       if (object.kind === "plane") {
         const size = object.size ?? [2.2, 1.4];
-        const geometry = new THREE.PlaneGeometry(size[0], size[1]);
-        const plane = new THREE.Mesh(geometry, material);
-        if (object.plane === "xy") plane.rotation.x = -Math.PI / 2;
-        if (object.plane === "yz") plane.rotation.y = Math.PI / 2;
-        if (object.plane === "xz") plane.rotation.z = 0;
+        const geo = new THREE.PlaneGeometry(size[0], size[1]);
+        const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, roughness: 0.55 });
+        const plane = new THREE.Mesh(geo, mat);
+        if (object.normal) {
+          // Diagonal plane — rotate to face given normal
+          const defNorm = new THREE.Vector3(0, 0, 1);
+          const tgtNorm = new THREE.Vector3(...object.normal).normalize();
+          plane.quaternion.setFromUnitVectors(defNorm, tgtNorm);
+        } else {
+          if (object.plane === "xy") plane.rotation.x = -Math.PI / 2;
+          else if (object.plane === "yz") plane.rotation.y = Math.PI / 2;
+        }
         plane.position.copy(position);
         scene.add(plane);
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: textColor }));
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: textColor }));
+        edges.quaternion.copy(plane.quaternion);
         edges.rotation.copy(plane.rotation);
-        edges.position.copy(plane.position);
+        edges.position.copy(position);
         scene.add(edges);
-        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.12, 0.1)), textColor);
+        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.15, 0.1)), textColor);
+        return;
+      }
+
+      if (object.kind === "vector") {
+        addArrow(position, physicsPoint(object.end, [1,0,0]), color, object.label, object.dashed);
+        return;
+      }
+
+      if (object.kind === "cube") {
+        const sz = (object.size?.length === 3 ? object.size : [1, 1, 1]) as [number, number, number];
+        const geo = new THREE.BoxGeometry(...sz);
+        if (object.wireframe) {
+          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+          edges.position.copy(position);
+          scene.add(edges);
+        } else {
+          const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, roughness: 0.55 });
+          const cube = new THREE.Mesh(geo, mat);
+          cube.position.copy(position);
+          scene.add(cube);
+        }
+        if (object.label) addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(sz[0]/2+0.12, sz[1]/2+0.12, sz[2]/2+0.12)), textColor);
+        return;
+      }
+
+      if (object.kind === "sphere" || object.kind === "point") {
+        const geo = new THREE.SphereGeometry(object.radius ?? (object.kind === "point" ? 0.06 : 0.3), 32, 16);
+        const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, roughness: 0.55, wireframe: object.wireframe === true });
+        const sphere = new THREE.Mesh(geo, mat);
+        sphere.position.copy(position);
+        scene.add(sphere);
+        if (object.label) addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.1, 0.1)), textColor);
         return;
       }
 
       if (object.kind === "line_charge") {
         const axis = object.axis ?? "y";
-        const geometry = new THREE.CylinderGeometry(0.035, 0.035, 2.6, 24);
-        const line = new THREE.Mesh(geometry, material);
+        const geo = new THREE.CylinderGeometry(0.035, 0.035, 2.6, 24);
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+        const line = new THREE.Mesh(geo, mat);
         if (axis === "x") line.rotation.z = Math.PI / 2;
         if (axis === "y") line.rotation.x = Math.PI / 2;
         line.position.copy(position);
         scene.add(line);
         addSceneLabel(scene, object.label || "line charge", position.clone().add(new THREE.Vector3(0.12, 1.36, 0.12)), textColor);
-        return;
-      }
-
-      if (object.kind === "vector") {
-        addArrow(position, physicsPoint(object.end, [1, 0, 0]), color, object.label);
-        return;
-      }
-
-      if (object.kind === "point" || object.kind === "sphere") {
-        const geometry = new THREE.SphereGeometry(object.radius ?? 0.09, 32, 16);
-        const sphere = new THREE.Mesh(geometry, material);
-        sphere.position.copy(position);
-        scene.add(sphere);
-        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.1, 0.1)), textColor);
-        return;
-      }
-
-      if (object.kind === "cube") {
-        const size = object.size && object.size.length === 3 ? object.size : [0.6, 0.6, 0.6];
-        const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
-        const cube = new THREE.Mesh(geometry, material);
-        cube.position.copy(position);
-        scene.add(cube);
-        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.4, 0.1)), textColor);
       }
     };
 
-    if (!objects.some((object) => object.kind === "axes")) {
-      addAxes();
+    // Expose for incremental use
+    addObjectRef.current = buildObject;
+    addAxesRef.current = addAxes;
+    renderRef.current = () => renderer.render(scene, perspectiveCamera);
+
+    // Register in global registry for ai_3d_build + vision capture
+    if (sceneId) {
+      sceneRegistry.set(sceneId, {
+        add: buildObject,
+        render: () => renderer.render(scene, perspectiveCamera),
+        capture: () => {
+          renderer.render(scene, perspectiveCamera);
+          return renderer.domElement.toDataURL("image/jpeg", 0.85);
+        },
+      });
     }
-    objects.forEach(buildObject);
 
     let disposed = false;
     const animate = () => {
@@ -864,33 +929,52 @@ function ThreeSceneRenderer({
     animate();
 
     const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      const nextWidth = entry?.contentRect.width || width;
-      renderer.setSize(nextWidth, height);
-      perspectiveCamera.aspect = nextWidth / height;
+      const nextW = entries[0]?.contentRect.width || width;
+      renderer.setSize(nextW, height);
+      perspectiveCamera.aspect = nextW / height;
       perspectiveCamera.updateProjectionMatrix();
     });
     resizeObserver.observe(mount);
 
+    // Trigger incremental effect to build initial objects
+    setSceneVersion(v => v + 1);
+
     return () => {
       disposed = true;
+      if (sceneId) sceneRegistry.delete(sceneId);
+      addObjectRef.current = null;
+      addAxesRef.current = null;
+      renderRef.current = null;
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
-      scene.traverse((object) => {
-        if (object instanceof THREE.Mesh) {
-          object.geometry.dispose();
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          materials.forEach((material) => material.dispose());
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
         }
-        if (object instanceof THREE.Sprite) {
-          object.material.map?.dispose();
-          object.material.dispose();
-        }
+        if (obj instanceof THREE.Sprite) { obj.material.map?.dispose(); obj.material.dispose(); }
       });
       mount.removeChild(renderer.domElement);
     };
-  }, [camera, isBlackboard, objects]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBlackboard, cx, cy, cz, sceneId]);
+
+  // ── EFFECT 2: Incrementally add new objects as objects array grows ──────────
+  useEffect(() => {
+    if (!addObjectRef.current) return;
+    if (builtCountRef.current === 0 && !axesAddedRef.current && !objects.some(o => o.kind === "axes")) {
+      addAxesRef.current?.();
+      axesAddedRef.current = true;
+    }
+    const newObjs = objects.slice(builtCountRef.current);
+    if (newObjs.length === 0) return;
+    newObjs.forEach(obj => addObjectRef.current!(obj));
+    builtCountRef.current = objects.length;
+    renderRef.current?.();
+  // sceneVersion ensures this reruns after scene re-init
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneVersion, objects.length]);
 
   return (
     <VisualFrame title={title} isBlackboard={isBlackboard}>
@@ -1166,6 +1250,7 @@ export interface BoardRendererProps {
   onCheckpointAnswer: (answer: string) => void;
   optionAnswers: Record<string, string>;
   onOptionSelect: (groupId: string, label: string) => void;
+  instant?: boolean;
 }
 
 export function BoardRenderer({
@@ -1175,6 +1260,7 @@ export function BoardRenderer({
   onCheckpointAnswer,
   optionAnswers,
   onOptionSelect,
+  instant = false,
 }: BoardRendererProps) {
   const isBlackboard = boardMode === "blackboard";
   const items = groupElements(elements);
@@ -1192,6 +1278,7 @@ export function BoardRenderer({
   }, [elements.length]);
 
   return (
+    <MotionConfig reducedMotion={instant ? "always" : "never"}>
     <div className="flex flex-col gap-y-8 pb-12">
       {items.map((item, idx) => {
         // ── Options group (buffered 2×2) ──────────────────────────────────────
@@ -1270,7 +1357,7 @@ export function BoardRenderer({
                 transition={{ delay: 0.05 }}
                 className="max-w-3xl"
               >
-                <TypewriterText text={el.content} isBlackboard={isBlackboard} />
+                <TypewriterText text={el.content} isBlackboard={isBlackboard} instant={instant} />
               </motion.div>
             );
 
@@ -1291,6 +1378,9 @@ export function BoardRenderer({
             );
 
           // ── Three.js 3D scene ───────────────────────────────────────────────
+          case "ai_3d_build":
+            return null; // invisible — only updates the referenced ai_3d_scene's objects
+
           case "ai_3d_scene":
             return (
               <ThreeSceneRenderer
@@ -1299,6 +1389,7 @@ export function BoardRenderer({
                 objects={el.objects}
                 camera={el.camera}
                 isBlackboard={isBlackboard}
+                sceneId={el.sceneId}
               />
             );
 
@@ -1578,5 +1669,6 @@ export function BoardRenderer({
       {/* Auto-scroll sentinel */}
       <div ref={sentinelRef} className="h-1 w-full" />
     </div>
+    </MotionConfig>
   );
 }

@@ -22,7 +22,12 @@ import {
   incrementTeachPromptCount,
 } from "@/lib/teach-quota";
 import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
+import { SessionHistory } from "@/components/teach/SessionHistory";
+import { createTeachSession, saveTeachSession, type TeachSession } from "@/lib/teach-sessions";
+import { setReplayMode } from "@/lib/tts";
+import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
 import { toast } from "sonner";
+import { RotateCcw, Square, Play, Pause } from "lucide-react";
 
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 // NOTE: Worker now injects its own copy — this is kept for history reconstruction only.
@@ -305,6 +310,19 @@ function TeachPage() {
   // ── Error state ──
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  // ── Session history ──
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [boardInstant, setBoardInstant] = useState(false);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const currentSessionIdRef = useRef<string | null>(null);
+  const drainAbortRef = useRef(false);
+  const drainPausedRef = useRef(false);
+  const drainInterruptRef = useRef<(() => void) | null>(null);
+  const replaySnapshotRef = useRef<BoardElement[]>([]); // full element list before replay clears board
+  const [isPaused, setIsPaused] = useState(false);
+  useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
+
   // ── Prompt quota ──
   const { user } = useAuth();
   const [promptCount, setPromptCount] = useState<number>(0);
@@ -351,11 +369,23 @@ function TeachPage() {
     isRevealingRef.current = true;
     drainPromiseRef.current = (async () => {
       try {
-        while (pendingQueueRef.current.length > 0) {
+        while (pendingQueueRef.current.length > 0 && !drainAbortRef.current && !drainPausedRef.current) {
           const next = pendingQueueRef.current.shift();
           if (!next) continue;
 
-          setElements((prev) => [...prev, next]);
+          if (next.type === "ai_3d_build") {
+            // Append new objects to the referenced ai_3d_scene + record build element
+            setElements(prev => {
+              const updated = prev.map(e =>
+                e.type === "ai_3d_scene" && e.sceneId === next.sceneId
+                  ? { ...e, objects: [...e.objects, ...next.add] }
+                  : e
+              );
+              return [...updated, next];
+            });
+          } else {
+            setElements((prev) => [...prev, next]);
+          }
 
           let delay = 300;
           if (next.type === "ai_body") {
@@ -384,6 +414,8 @@ function TeachPage() {
           delay = 700;
         } else if (next.type === "ai_diagram" || next.type === "ai_divider") {
           delay = 300;
+        } else if (next.type === "ai_3d_build") {
+          delay = 900; // time for Three.js to render the new object
         }
 
           const animPromise = new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -392,9 +424,15 @@ function TeachPage() {
           const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
           const speakPromise = shouldSpeak ? speakElement(speakText) : Promise.resolve();
 
-          console.log("revealing:", next.type, "speak text length:", speakText.length);
-          await Promise.all([animPromise, speakPromise]);
-          console.log("done revealing:", next.type);
+          // Interruptible await — stop/pause resolve this immediately
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            const finish = () => { if (!settled) { settled = true; resolve(); } };
+            Promise.all([animPromise, speakPromise]).then(finish);
+            drainInterruptRef.current = finish;
+          });
+          drainInterruptRef.current = null;
+          if (drainAbortRef.current || drainPausedRef.current) break;
 
           if (next.type === "ai_question") {
             setCheckpointElementId(next.id);
@@ -595,6 +633,8 @@ function TeachPage() {
         }
         const finalDrain = drainNext();
         await finalDrain;
+        // Vision re-check any 3D scenes that were added in this response
+        void verify3DScenes(elementsRef.current);
         return true;
       } catch (err: any) {
         console.error("Streaming error:", err);
@@ -663,6 +703,10 @@ function TeachPage() {
       // Clear any prior error
       setErrorText(null);
 
+      // Clear pause if active
+      drainPausedRef.current = false;
+      setIsPaused(false);
+
       // Stop any ongoing TTS
       stopCurrentSpeech();
 
@@ -689,9 +733,26 @@ function TeachPage() {
       const messages = [...history];
 
       const uid = user.uid;
+      const isFirstMessage = elementsRef.current.length === 0;
+      const allStudentMessages = [...elementsRef.current, { type: "student_text", content: studentContent }]
+        .filter((el: any) => el.type === "student_text");
+      const meaningfulMsg = allStudentMessages.find((el: any) => el.content.trim().split(" ").length > 3);
+      const sessionTitle = (meaningfulMsg?.content ?? studentContent).slice(0, 80);
       void (async () => {
         const ok = await streamToBoard(messages, messageAttachments);
         if (!ok) return;
+        try {
+          // Auto-save session after each successful AI response
+          const sessionId = currentSessionIdRef.current ?? nanoid();
+          if (!currentSessionIdRef.current) {
+            setCurrentSessionId(sessionId);
+            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current);
+          } else {
+            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current);
+          }
+        } catch (e) {
+          console.error("Failed to save session:", e);
+        }
         try {
           const next = await incrementTeachPromptCount(uid);
           setPromptCount(next);
@@ -708,9 +769,138 @@ function TeachPage() {
           // increment failed (offline / rules) — surface gracefully
         }
       })();
+      void isFirstMessage;
     },
     [attachments, buildHistory, streamToBoard, quotaLoaded, user?.uid]
   );
+
+  // ── Replay current board ─────────────────────────────────────────────────
+  const handleReplay = useCallback(async () => {
+    const snapshot = replaySnapshotRef.current.length > 0
+      ? replaySnapshotRef.current          // re-replay from full snapshot
+      : [...elementsRef.current];          // first replay — snapshot current board
+    if (snapshot.length === 0) return;
+    replaySnapshotRef.current = snapshot;  // always keep full snapshot
+    drainAbortRef.current = false;
+    stopCurrentSpeech();
+    pendingQueueRef.current = [];
+    setElements([]);
+    setBoardInstant(false);
+    setIsReplaying(true);
+    setReplayMode(true);
+    await new Promise(r => setTimeout(r, 50));
+    pendingQueueRef.current = [...snapshot];
+    await drainNext();
+    // only reset if not aborted (stop sets its own state)
+    if (!drainAbortRef.current) {
+      setIsReplaying(false);
+      setReplayMode(false);
+    }
+  }, [drainNext]);
+
+  const handleStopReplay = useCallback(() => {
+    drainInterruptRef.current?.();
+    drainAbortRef.current = true;
+    pendingQueueRef.current = [];
+    stopCurrentSpeech();
+    stopAllTypewriters();
+    setIsReplaying(false);
+    setReplayMode(false);
+  }, []);
+
+  const handlePauseLive = useCallback(() => {
+    drainInterruptRef.current?.();
+    drainPausedRef.current = true;
+    stopCurrentSpeech();
+    stopAllTypewriters();
+    setIsPaused(true);
+  }, []);
+
+  const handleResumeLive = useCallback(() => {
+    drainPausedRef.current = false;
+    setIsPaused(false);
+    void drainNext(); // continue from pending queue
+  }, [drainNext]);
+
+  const handleResume = useCallback(async () => {
+    const snapshot = replaySnapshotRef.current;
+    if (snapshot.length === 0) return;
+    const revealedIds = new Set(elementsRef.current.map(e => e.id));
+    const remaining = snapshot.filter(e => !revealedIds.has(e.id));
+    if (remaining.length === 0) return;
+    drainAbortRef.current = false;
+    setIsReplaying(true);
+    setReplayMode(true);
+    pendingQueueRef.current = remaining;
+    await drainNext();
+    if (!drainAbortRef.current) {
+      setIsReplaying(false);
+      setReplayMode(false);
+    }
+  }, [drainNext]);
+
+  // ── Vision re-check for 3D scenes ────────────────────────────────────────
+  const verify3DScenes = useCallback(async (els: BoardElement[]) => {
+    const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
+    const scenes = els.filter(e => e.type === "ai_3d_scene" && (e as any).sceneId);
+    for (const scene of scenes) {
+      const s = scene as Extract<BoardElement, { type: "ai_3d_scene" }>;
+      if (!s.sceneId) continue;
+      await new Promise(r => setTimeout(r, 800)); // let Three.js finish rendering
+      const dataUrl = captureScene(s.sceneId);
+      if (!dataUrl) continue;
+      try {
+        const res = await fetch(`${workerUrl}/api/verify-3d`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageDataUrl: dataUrl, title: s.title ?? "3D scene" }),
+        });
+        const { ok, feedback } = await res.json() as { ok: boolean; feedback: string };
+        if (!ok) {
+          const correctionEl: BoardElement = {
+            id: nanoid(),
+            type: "ai_body",
+            content: `Diagram note: ${feedback}`,
+            speak: `Quick note on the diagram — ${feedback}`,
+          };
+          setElements(prev => [...prev, correctionEl]);
+        }
+      } catch { /* non-fatal */ }
+    }
+  }, []);
+
+  // ── New session ──────────────────────────────────────────────────────────
+  const handleNewSession = useCallback(() => {
+    drainInterruptRef.current?.();
+    drainAbortRef.current = true;
+    drainPausedRef.current = false;
+    stopCurrentSpeech();
+    pendingQueueRef.current = [];
+    replaySnapshotRef.current = [];
+    setElements([]);
+    setCurrentSessionId(null);
+    setIsReplaying(false);
+    setIsPaused(false);
+    setReplayMode(false);
+    setErrorText(null);
+    setCheckpointElementId(null);
+    setAttachments([]);
+    drainAbortRef.current = false;
+  }, []);
+
+  // ── Load session ──────────────────────────────────────────────────────────
+  const handleLoadSession = useCallback((session: TeachSession) => {
+    stopCurrentSpeech();
+    pendingQueueRef.current = [];
+    setBoardInstant(true);
+    setElements(session.elements ?? []);
+    setCurrentSessionId(session.id);
+    setErrorText(null);
+    setCheckpointElementId(null);
+    // Reset instant after render so new AI responses animate normally
+    setTimeout(() => setBoardInstant(false), 100);
+    toast.success(`Loaded: "${session.title}"`);
+  }, []);
 
   // ── Retry sending the last student message ──────────────────────────────
   const handleRetry = useCallback(() => {
@@ -803,6 +993,17 @@ function TeachPage() {
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
         ttsEnabled={ttsEnabled}
+        onOpenHistory={() => setHistoryOpen(true)}
+        onNewSession={handleNewSession}
+        onReplay={elements.length > 0 && !isReplaying ? handleReplay : undefined}
+        onStopReplay={isReplaying ? handleStopReplay : undefined}
+        onResume={
+          !isReplaying &&
+          replaySnapshotRef.current.length > 0 &&
+          elements.length < replaySnapshotRef.current.length
+            ? handleResume
+            : undefined
+        }
         onToggleTTS={() => {
           setTtsEnabled((v) => {
             const nextVal = !v;
@@ -826,10 +1027,44 @@ function TeachPage() {
               onCheckpointAnswer={handleCheckpointAnswer}
               optionAnswers={optionAnswers}
               onOptionSelect={handleOptionSelect}
+              instant={boardInstant}
             />
           </div>
         )}
       </TeachBoard>
+
+      {/* ── Session controls toolbar (below the board) ── */}
+      {(elements.length > 0 || isReplaying || isPaused || (replaySnapshotRef.current.length > 0 && elements.length < replaySnapshotRef.current.length)) && (
+        <div className="flex items-center justify-end gap-2 mt-3 px-1">
+          {/* Live pause / resume */}
+          {!isReplaying && aiState === "speaking" && !isPaused && (
+            <button onClick={handlePauseLive} className="flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent transition-colors">
+              <Pause size={13} /> Pause
+            </button>
+          )}
+          {!isReplaying && isPaused && (
+            <button onClick={handleResumeLive} className="flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent transition-colors">
+              <Play size={13} /> Resume
+            </button>
+          )}
+          {/* Replay controls */}
+          {isReplaying && (
+            <button onClick={handleStopReplay} className="flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent transition-colors">
+              <Square size={13} /> Stop
+            </button>
+          )}
+          {!isReplaying && !isPaused && replaySnapshotRef.current.length > 0 && elements.length < replaySnapshotRef.current.length && (
+            <button onClick={handleResume} className="flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent transition-colors">
+              <Play size={13} /> Resume
+            </button>
+          )}
+          {elements.length > 0 && !isReplaying && !isPaused && (
+            <button onClick={handleReplay} className="flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-accent transition-colors">
+              <RotateCcw size={13} /> Replay
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Error Card ── */}
       {errorText && (
@@ -848,6 +1083,16 @@ function TeachPage() {
         disabled={dockDisabled}
         placeholder={dockPlaceholder}
       />
+
+      {user?.uid && (
+        <SessionHistory
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          uid={user.uid}
+          currentSessionId={currentSessionId}
+          onLoadSession={handleLoadSession}
+        />
+      )}
 
       <FeedbackDialog
         open={feedbackOpen}

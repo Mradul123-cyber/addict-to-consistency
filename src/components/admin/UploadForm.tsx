@@ -33,6 +33,7 @@ export function UploadForm({ onUploadComplete }: UploadFormProps) {
   const [subject, setSubject] = useState<Subject>("physics");
   const [chapterId, setChapterId] = useState<string>("");
   const [contentType, setContentType] = useState<ContentType>("questions");
+  const [pageRange, setPageRange] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -108,6 +109,7 @@ export function UploadForm({ onUploadComplete }: UploadFormProps) {
             retryCount: 0,
           };
           if (chapterId.trim()) jobData.chapterId = chapterId.trim();
+          if (pageRange.trim()) jobData.pageRange = pageRange.trim();
 
           await addDoc(collection(db, "contentUploads"), jobData);
 
@@ -198,6 +200,22 @@ export function UploadForm({ onUploadComplete }: UploadFormProps) {
           />
           <p className="text-xs text-muted-foreground">
             Must match existing chapter IDs from curriculum tracks
+          </p>
+        </div>
+
+        {/* Page Range */}
+        <div className="space-y-2">
+          <Label htmlFor="page-range">Page Range <span className="text-muted-foreground font-normal">(optional)</span></Label>
+          <Input
+            id="page-range"
+            type="text"
+            placeholder="e.g. 1-50  or  51-100  or  leave blank for all pages"
+            value={pageRange}
+            onChange={(e) => setPageRange(e.target.value)}
+            disabled={uploading}
+          />
+          <p className="text-xs text-muted-foreground">
+            For large PDFs (100+ questions), split into batches — upload the same PDF multiple times with different ranges.
           </p>
         </div>
 

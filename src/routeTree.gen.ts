@@ -12,12 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TracksRouteImport } from './routes/tracks'
 import { Route as TeachRouteImport } from './routes/teach'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ProblemsRouteImport } from './routes/problems'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as MatrixRouteImport } from './routes/matrix'
 import { Route as LogRouteImport } from './routes/log'
 import { Route as FocusRouteImport } from './routes/focus'
+import { Route as CommunityNotesRouteImport } from './routes/community-notes'
 import { Route as AirgapRouteImport } from './routes/airgap'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TestTestIdRouteImport } from './routes/test.$testId'
+import { Route as TestResultsTestIdRouteImport } from './routes/test-results.$testId'
+import { Route as PracticeSessionIdRouteImport } from './routes/practice.$sessionId'
 import { Route as AdminUploadRouteImport } from './routes/admin/upload'
 import { Route as AdminReviewJobIdRouteImport } from './routes/admin/review.$jobId'
 
@@ -34,6 +39,11 @@ const TeachRoute = TeachRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProblemsRoute = ProblemsRouteImport.update({
+  id: '/problems',
+  path: '/problems',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotesRoute = NotesRouteImport.update({
@@ -56,6 +66,11 @@ const FocusRoute = FocusRouteImport.update({
   path: '/focus',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunityNotesRoute = CommunityNotesRouteImport.update({
+  id: '/community-notes',
+  path: '/community-notes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AirgapRoute = AirgapRouteImport.update({
   id: '/airgap',
   path: '/airgap',
@@ -64,6 +79,21 @@ const AirgapRoute = AirgapRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestTestIdRoute = TestTestIdRouteImport.update({
+  id: '/test/$testId',
+  path: '/test/$testId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestResultsTestIdRoute = TestResultsTestIdRouteImport.update({
+  id: '/test-results/$testId',
+  path: '/test-results/$testId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PracticeSessionIdRoute = PracticeSessionIdRouteImport.update({
+  id: '/practice/$sessionId',
+  path: '/practice/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUploadRoute = AdminUploadRouteImport.update({
@@ -80,41 +110,56 @@ const AdminReviewJobIdRoute = AdminReviewJobIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/airgap': typeof AirgapRoute
+  '/community-notes': typeof CommunityNotesRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
+  '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
+  '/practice/$sessionId': typeof PracticeSessionIdRoute
+  '/test-results/$testId': typeof TestResultsTestIdRoute
+  '/test/$testId': typeof TestTestIdRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/airgap': typeof AirgapRoute
+  '/community-notes': typeof CommunityNotesRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
+  '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
+  '/practice/$sessionId': typeof PracticeSessionIdRoute
+  '/test-results/$testId': typeof TestResultsTestIdRoute
+  '/test/$testId': typeof TestTestIdRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/airgap': typeof AirgapRoute
+  '/community-notes': typeof CommunityNotesRoute
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
   '/notes': typeof NotesRoute
+  '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
+  '/practice/$sessionId': typeof PracticeSessionIdRoute
+  '/test-results/$testId': typeof TestResultsTestIdRoute
+  '/test/$testId': typeof TestTestIdRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRouteTypes {
@@ -122,54 +167,74 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/airgap'
+    | '/community-notes'
     | '/focus'
     | '/log'
     | '/matrix'
     | '/notes'
+    | '/problems'
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
     | '/admin/upload'
+    | '/practice/$sessionId'
+    | '/test-results/$testId'
+    | '/test/$testId'
     | '/admin/review/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/airgap'
+    | '/community-notes'
     | '/focus'
     | '/log'
     | '/matrix'
     | '/notes'
+    | '/problems'
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
     | '/admin/upload'
+    | '/practice/$sessionId'
+    | '/test-results/$testId'
+    | '/test/$testId'
     | '/admin/review/$jobId'
   id:
     | '__root__'
     | '/'
     | '/airgap'
+    | '/community-notes'
     | '/focus'
     | '/log'
     | '/matrix'
     | '/notes'
+    | '/problems'
     | '/sitemap.xml'
     | '/teach'
     | '/tracks'
     | '/admin/upload'
+    | '/practice/$sessionId'
+    | '/test-results/$testId'
+    | '/test/$testId'
     | '/admin/review/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AirgapRoute: typeof AirgapRoute
+  CommunityNotesRoute: typeof CommunityNotesRoute
   FocusRoute: typeof FocusRoute
   LogRoute: typeof LogRoute
   MatrixRoute: typeof MatrixRoute
   NotesRoute: typeof NotesRoute
+  ProblemsRoute: typeof ProblemsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TeachRoute: typeof TeachRoute
   TracksRoute: typeof TracksRoute
   AdminUploadRoute: typeof AdminUploadRoute
+  PracticeSessionIdRoute: typeof PracticeSessionIdRoute
+  TestResultsTestIdRoute: typeof TestResultsTestIdRoute
+  TestTestIdRoute: typeof TestTestIdRoute
   AdminReviewJobIdRoute: typeof AdminReviewJobIdRoute
 }
 
@@ -194,6 +259,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/problems': {
+      id: '/problems'
+      path: '/problems'
+      fullPath: '/problems'
+      preLoaderRoute: typeof ProblemsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notes': {
@@ -224,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FocusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/community-notes': {
+      id: '/community-notes'
+      path: '/community-notes'
+      fullPath: '/community-notes'
+      preLoaderRoute: typeof CommunityNotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/airgap': {
       id: '/airgap'
       path: '/airgap'
@@ -236,6 +315,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test/$testId': {
+      id: '/test/$testId'
+      path: '/test/$testId'
+      fullPath: '/test/$testId'
+      preLoaderRoute: typeof TestTestIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test-results/$testId': {
+      id: '/test-results/$testId'
+      path: '/test-results/$testId'
+      fullPath: '/test-results/$testId'
+      preLoaderRoute: typeof TestResultsTestIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/practice/$sessionId': {
+      id: '/practice/$sessionId'
+      path: '/practice/$sessionId'
+      fullPath: '/practice/$sessionId'
+      preLoaderRoute: typeof PracticeSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/upload': {
@@ -258,14 +358,19 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AirgapRoute: AirgapRoute,
+  CommunityNotesRoute: CommunityNotesRoute,
   FocusRoute: FocusRoute,
   LogRoute: LogRoute,
   MatrixRoute: MatrixRoute,
   NotesRoute: NotesRoute,
+  ProblemsRoute: ProblemsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TeachRoute: TeachRoute,
   TracksRoute: TracksRoute,
   AdminUploadRoute: AdminUploadRoute,
+  PracticeSessionIdRoute: PracticeSessionIdRoute,
+  TestResultsTestIdRoute: TestResultsTestIdRoute,
+  TestTestIdRoute: TestTestIdRoute,
   AdminReviewJobIdRoute: AdminReviewJobIdRoute,
 }
 export const routeTree = rootRouteImport

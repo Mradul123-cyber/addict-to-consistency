@@ -138,7 +138,6 @@ function RootComponent() {
   const isNotesRoute = useRouterState({
     select: (s) => s.location.pathname.startsWith("/notes"),
   });
-  const isNavigating = useRouterState({ select: (s) => s.status === "pending" });
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -157,16 +156,14 @@ function RootComponent() {
                 <div className="flex min-h-screen flex-col bg-background text-foreground">
                   <AppNav />
                   <main
-                  className={cn(
-                    "min-h-0 flex-1",
-                    isNotesRoute
-                      ? "flex flex-col max-w-none p-0"
-                      : "mx-auto w-full max-w-6xl px-4 py-8",
-                  )}
-                >
-                    <div className={isNavigating ? "invisible" : ""}>
-                      <Outlet />
-                    </div>
+                    className={cn(
+                      "min-h-0 flex-1",
+                      isNotesRoute
+                        ? "flex flex-col max-w-none p-0"
+                        : "mx-auto w-full max-w-6xl px-4 py-8",
+                    )}
+                  >
+                    <Outlet />
                   </main>
                 </div>
               </NotesChromeProvider>

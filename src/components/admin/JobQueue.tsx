@@ -139,6 +139,7 @@ export function JobQueue({ refreshTrigger }: JobQueueProps) {
           contentType: job.contentType,
           jobId: job.id,
           geminiApiKey,
+          pageRange: (job as any).pageRange ?? "",
         }),
       });
 
@@ -177,7 +178,10 @@ export function JobQueue({ refreshTrigger }: JobQueueProps) {
         extractedData,
       });
 
-      toast.success(`Parsed ${count} ${job.contentType === "questions" ? "questions" : "sections"}. Ready for review.`);
+      const keyLabel = result.keySource === "admin-key" ? "your Gemini key" : "⚠️ env fallback key";
+      const usage = extracted?._tokenUsage;
+      const tokenInfo = usage ? ` (${usage.outputTokens}/${usage.outputLimit} output tokens${usage.hitLimit ? " — HIT LIMIT" : ""})` : "";
+      toast.success(`Parsed ${count} ${job.contentType === "questions" ? "questions" : "sections"} using ${keyLabel}.${tokenInfo} Ready for review.`);
     } catch (error: any) {
       await updateDoc(jobRef, {
         status: "failed",

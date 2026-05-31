@@ -236,4 +236,22 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+
+  button,
+  [role="button"],
+  a,
+  label[for],
+  select,
+  [type="checkbox"],
+  [type="radio"],
+  [type="submit"],
+  [type="reset"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  [type="submit"]:disabled {
+    cursor: not-allowed;
+  }
 }
