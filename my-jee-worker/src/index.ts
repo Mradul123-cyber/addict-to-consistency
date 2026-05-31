@@ -257,6 +257,8 @@ INLINE MATH IN ai_body — ESCAPING RULES
 export interface Env {
 	AICREDITS_API_KEY: string;
 	GEMINI_API_KEY: string;
+	ELEVENLABS_API_KEY: string;
+	ELEVENLABS_VOICE_ID: string;
 }
 
 type ChatMessage = { role: string; content: string };
@@ -553,6 +555,35 @@ function parseGeminiJson(text: string): any {
 	}
 }
 
+async function handleTTS(request: Request, env: Env): Promise<Response> {
+	if (request.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+	const { text } = await request.json() as { text: string };
+	if (!text?.trim()) return new Response("Missing text", { status: 400, headers: CORS_HEADERS });
+
+	const response = await fetch(
+		`https://api.elevenlabs.io/v1/text-to-speech/${env.ELEVENLABS_VOICE_ID}/stream`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json", "xi-api-key": env.ELEVENLABS_API_KEY },
+			body: JSON.stringify({
+				text: text.trim(),
+				model_id: "eleven_multilingual_v2",
+				voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.15, use_speaker_boost: true },
+			}),
+		}
+	);
+
+	if (!response.ok) {
+		const err = await response.text();
+		return new Response(JSON.stringify({ error: err }), { status: response.status, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
+	}
+
+	const audio = await response.arrayBuffer();
+	return new Response(audio, {
+		headers: { ...CORS_HEADERS, "Content-Type": "audio/mpeg", "Content-Length": String(audio.byteLength) },
+	});
+}
+
 async function handleVerify3D(request: Request, env: Env): Promise<Response> {
 	if (request.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
 	const { imageDataUrl, title } = await request.json() as { imageDataUrl: string; title: string };
@@ -663,6 +694,10 @@ export default {
 
 		if (url.pathname === "/api/verify-3d") {
 			return handleVerify3D(request, env);
+		}
+
+		if (url.pathname === "/api/tts") {
+			return handleTTS(request, env);
 		}
 
 		try {

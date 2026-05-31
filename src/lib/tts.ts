@@ -1,7 +1,6 @@
 // ── IndexedDB audio cache ─────────────────────────────────────────────────────
-// Stores raw ArrayBuffer keyed by SHA-256 hash of the text.
-// Survives page reloads, tab closes, and browser restarts.
-// L1: in-memory Map (instant) → L2: IndexedDB (persistent) → L3: ElevenLabs API
+// L1: in-memory Map (instant) → L2: IndexedDB (persistent) → L3: Worker → ElevenLabs
+// API key never touches the browser — proxied through Cloudflare Worker.
 
 const DB_NAME = "jee-tts-cache";
 const DB_VERSION = 1;
@@ -52,7 +51,6 @@ let currentSourceNode: AudioBufferSourceNode | null = null;
 let activeSpeechId = 0;
 let replayMode = false;
 
-// L1 in-memory cache: key → decoded AudioBuffer (fastest, lives for tab session)
 const memCache = new Map<string, AudioBuffer>();
 
 export function setReplayMode(on: boolean) { replayMode = on; }
@@ -68,13 +66,7 @@ export async function speakElement(text: string): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
 
-  const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-  const voiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID;
-
-  if (!apiKey || !voiceId) {
-    console.warn("ElevenLabs API key or voice ID is missing. TTS will be skipped.");
-    return;
-  }
+  const workerUrl = import.meta.env.VITE_WORKER_URL;
 
   const speechId = ++activeSpeechId;
   stopCurrentSpeech();
@@ -86,41 +78,29 @@ export async function speakElement(text: string): Promise<void> {
     const key = await textToKey(trimmed);
     let audioBuffer: AudioBuffer;
 
-    // L1: memory cache hit
+    // L1: memory cache
     if (memCache.has(key)) {
       audioBuffer = memCache.get(key)!;
     } else {
-      // L2: IndexedDB cache hit
+      // L2: IndexedDB cache
       const stored = await idbGet(key);
       if (stored) {
         audioBuffer = await ctx.decodeAudioData(stored.slice(0));
         memCache.set(key, audioBuffer);
       } else {
-        // L3: ElevenLabs — skipped during replay
+        // L3: Worker → ElevenLabs (skipped during replay)
         if (replayMode) return;
-        console.log("ElevenLabs request — text length:", trimmed.length);
-        const response = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "xi-api-key": apiKey,
-            },
-            body: JSON.stringify({
-              text: trimmed,
-              model_id: "eleven_multilingual_v2",
-              voice_settings: { stability: 0.55, similarity_boost: 0.80, style: 0.15, use_speaker_boost: true },
-            }),
-          }
-        );
+        const response = await fetch(`${workerUrl}/api/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: trimmed }),
+        });
 
         if (!response.ok) {
-          throw new Error(`ElevenLabs error: ${response.status} ${response.statusText}`);
+          throw new Error(`TTS error: ${response.status}`);
         }
 
         const rawBuffer = await response.arrayBuffer();
-        // Persist to IndexedDB (non-blocking)
         void idbSet(key, rawBuffer.slice(0));
         audioBuffer = await ctx.decodeAudioData(rawBuffer);
         memCache.set(key, audioBuffer);
