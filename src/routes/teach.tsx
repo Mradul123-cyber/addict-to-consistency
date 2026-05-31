@@ -1026,10 +1026,16 @@ function TeachPage() {
             isBlackboard={boardConfig.mode === "blackboard"}
           />
         ) : elements.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
+          <div className="flex flex-col items-center justify-center h-full gap-3">
             <p className="text-sm font-light opacity-35">
               {getModeConfig(mode!).persona} is ready — ask anything
             </p>
+            <button
+              onClick={() => setMode(null)}
+              className="text-xs opacity-40 hover:opacity-70 transition-opacity underline underline-offset-2"
+            >
+              Change mode
+            </button>
           </div>
         ) : (
           <div className="w-full">

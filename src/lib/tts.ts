@@ -1,6 +1,6 @@
 // ── IndexedDB audio cache ─────────────────────────────────────────────────────
-// L1: in-memory Map (instant) → L2: IndexedDB (persistent) → L3: Worker → ElevenLabs
-// API key never touches the browser — proxied through Cloudflare Worker.
+// L1: in-memory Map → L2: IndexedDB → L3: Worker → ElevenLabs
+// Cache key includes voiceId so switching voices doesn't serve stale audio.
 
 const DB_NAME = "jee-tts-cache";
 const DB_VERSION = 1;
@@ -39,9 +39,32 @@ async function idbSet(key: string, value: ArrayBuffer): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-async function textToKey(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+async function textToKey(text: string, voiceId: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(voiceId + ":" + text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ── Voice config ──────────────────────────────────────────────────────────────
+
+export const PRESET_VOICES = [
+  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", desc: "British · Authoritative" },
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "American · Clear" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Assertive" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Strong · Firm" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", desc: "Warm · Natural" },
+] as const;
+
+const VOICE_KEY = "jee-voice-id";
+const DEFAULT_VOICE_ID = PRESET_VOICES[0].id; // Daniel
+
+export function getSavedVoiceId(): string {
+  try { return localStorage.getItem(VOICE_KEY) || DEFAULT_VOICE_ID; }
+  catch { return DEFAULT_VOICE_ID; }
+}
+
+export function saveVoiceId(id: string): void {
+  try { localStorage.setItem(VOICE_KEY, id); }
+  catch { /* non-fatal */ }
 }
 
 // ── Runtime state ─────────────────────────────────────────────────────────────
@@ -67,6 +90,7 @@ export async function speakElement(text: string): Promise<void> {
   if (!trimmed) return;
 
   const workerUrl = import.meta.env.VITE_WORKER_URL;
+  const voiceId = getSavedVoiceId();
 
   const speechId = ++activeSpeechId;
   stopCurrentSpeech();
@@ -75,30 +99,25 @@ export async function speakElement(text: string): Promise<void> {
     const ctx = getAudioCtx();
     if (ctx.state === "suspended") await ctx.resume();
 
-    const key = await textToKey(trimmed);
+    const key = await textToKey(trimmed, voiceId);
     let audioBuffer: AudioBuffer;
 
-    // L1: memory cache
     if (memCache.has(key)) {
       audioBuffer = memCache.get(key)!;
     } else {
-      // L2: IndexedDB cache
       const stored = await idbGet(key);
       if (stored) {
         audioBuffer = await ctx.decodeAudioData(stored.slice(0));
         memCache.set(key, audioBuffer);
       } else {
-        // L3: Worker → ElevenLabs (skipped during replay)
         if (replayMode) return;
         const response = await fetch(`${workerUrl}/api/tts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: trimmed }),
+          body: JSON.stringify({ text: trimmed, voiceId }),
         });
 
-        if (!response.ok) {
-          throw new Error(`TTS error: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`TTS error: ${response.status}`);
 
         const rawBuffer = await response.arrayBuffer();
         void idbSet(key, rawBuffer.slice(0));
@@ -134,10 +153,8 @@ export async function speakElement(text: string): Promise<void> {
 
 export function stopCurrentSpeech() {
   if (currentSourceNode) {
-    try {
-      currentSourceNode.stop();
-      currentSourceNode.disconnect();
-    } catch { /* already stopped */ }
+    try { currentSourceNode.stop(); currentSourceNode.disconnect(); }
+    catch { /* already stopped */ }
     currentSourceNode = null;
   }
 }

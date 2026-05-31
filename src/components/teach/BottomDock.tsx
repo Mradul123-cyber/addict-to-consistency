@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { FileText, ImageIcon, Mic, MicOff, Paperclip, SendHorizonal, X } from "lucide-react";
+import { FileText, ImageIcon, Mic, MicOff, Paperclip, SendHorizonal, X, Mic2, ChevronDown, Check } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
+import { PRESET_VOICES, getSavedVoiceId, saveVoiceId } from "@/lib/tts";
 
 export function BottomDock({
   inputState,
@@ -12,6 +13,33 @@ export function BottomDock({
   placeholder = "Ask anything about this concept…",
 }: BottomDockProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const voiceRef = useRef<HTMLDivElement>(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customId, setCustomId] = useState("");
+
+  const selectVoice = (id: string) => {
+    saveVoiceId(id);
+    setSelectedVoice(id);
+    setVoiceOpen(false);
+    setShowCustom(false);
+    setCustomId("");
+  };
+
+  const applyCustom = () => {
+    if (customId.trim()) selectVoice(customId.trim());
+  };
+
+  const currentVoice = PRESET_VOICES.find(v => v.id === selectedVoice);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (!voiceRef.current?.contains(e.target as Node)) setVoiceOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
 
   const handleSend = () => {
     const trimmed = inputState.text.trim();
@@ -126,6 +154,65 @@ export function BottomDock({
             className="resize-none bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
             style={{ maxHeight: "7rem", lineHeight: "1.5rem" }}
           />
+        </div>
+
+        {/* Voice picker */}
+        <div ref={voiceRef} className="relative shrink-0">
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.85 }}
+            onClick={() => setVoiceOpen(o => !o)}
+            className="flex h-9 items-center gap-1 rounded-xl px-2 text-white/35 transition-all hover:bg-white/8 hover:text-white/65"
+          >
+            <Mic2 className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-semibold">{currentVoice?.name ?? "Voice"}</span>
+            <ChevronDown className={`h-3 w-3 transition-transform ${voiceOpen ? "rotate-180" : ""}`} />
+          </motion.button>
+
+          {voiceOpen && (
+            <div className="absolute bottom-full right-0 mb-2 z-50 w-52 rounded-xl overflow-hidden"
+              style={{
+                background: "rgba(18,18,18,0.95)",
+                backdropFilter: "blur(20px)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                boxShadow: "0 -8px 32px rgba(0,0,0,0.6)",
+              }}
+            >
+              {PRESET_VOICES.map(v => (
+                <button key={v.id} onClick={() => selectVoice(v.id)}
+                  className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-white/90">{v.name}</p>
+                    <p className="text-[11px] text-white/40">{v.desc}</p>
+                  </div>
+                  {selectedVoice === v.id && <Check size={13} className="shrink-0 text-emerald-400" />}
+                </button>
+              ))}
+              <div className="border-t border-white/8" />
+              {!showCustom ? (
+                <button onClick={() => setShowCustom(true)}
+                  className="w-full px-3 py-2.5 text-left text-xs text-white/35 transition-colors hover:bg-white/8 hover:text-white/55"
+                >
+                  + Custom ElevenLabs voice ID
+                </button>
+              ) : (
+                <div className="px-3 py-2.5 space-y-2">
+                  <p className="text-[10px] text-white/35">Paste voice ID from elevenlabs.io</p>
+                  <div className="flex gap-1.5">
+                    <input autoFocus value={customId} onChange={e => setCustomId(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && applyCustom()}
+                      placeholder="pNInz6obpgDQGcFmaJgB"
+                      className="flex-1 rounded-md border border-white/10 bg-white/6 px-2 py-1 text-[11px] font-mono text-white/80 placeholder:text-white/20 outline-none"
+                    />
+                    <button onClick={applyCustom} disabled={!customId.trim()}
+                      className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-30"
+                    >Use</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Mic */}
