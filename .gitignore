@@ -23,6 +23,12 @@ dist-ssr
 # Worker source — deployed to Cloudflare separately, not needed for frontend hosting
 my-jee-worker/
 
+# Admin panel routes — UID-protected, kept private
+src/routes/admin/
+
+# Dev/seed scripts
+scripts/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
