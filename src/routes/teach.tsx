@@ -23,7 +23,6 @@ import {
   TEACH_PROMPT_LIMIT,
   getTeachPromptCount,
   incrementTeachPromptCount,
-  resetTeachPromptCount,
 } from "@/lib/teach-quota";
 import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
 import { lazy } from "react";
@@ -1261,13 +1260,6 @@ function TeachPage() {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* ── TEMP: dev reset ── */}
-      {user?.uid && (
-        <button onClick={async () => { await resetTeachPromptCount(user.uid!); setPromptCount(0); promptCountRef.current = 0; setFeedbackOpen(false); toast.success("Prompts reset!"); }}
-          className="absolute top-2 right-2 z-50 rounded bg-red-600/80 px-2 py-1 text-[10px] font-bold text-white">
-          [DEV] Reset
-        </button>
-      )}
       {/* ── PDF truncation notice banner ── */}
       <AnimatePresence>
         {pdfTruncationNotice && (
