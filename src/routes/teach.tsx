@@ -22,7 +22,6 @@ import { useProfile } from "@/contexts/ProfileContext";
 import {
   TEACH_PROMPT_LIMIT,
   getTeachPromptCount,
-  incrementTeachPromptCount,
 } from "@/lib/teach-quota";
 import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
 import { lazy } from "react";
@@ -608,9 +607,14 @@ function TeachPage() {
     ) => {
       const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
       try {
+        // Get fresh Firebase ID token for server-side auth verification
+        const idToken = user ? await user.getIdToken() : null;
         const response = await fetch(workerUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+          },
           body: JSON.stringify({
             messages,
             attachments: requestAttachments,
@@ -627,19 +631,20 @@ function TeachPage() {
         });
 
         if (!response.ok) {
-          if (response.status === 429) {
+          if (!response.ok) {
             const data = await response.json().catch(() => ({})) as { error?: string };
-            if (data.error === "IP_LIMIT_REACHED") {
-              // Remove the student's question from board — it should vanish
+            // Remove the student's question from board on auth/limit errors
+            if (data.error === "IP_LIMIT_REACHED" || data.error === "QUOTA_EXCEEDED" || data.error === "GUEST_BLOCKED" || data.error === "INVALID_TOKEN") {
               setElements(prev => {
                 const last = prev.at(-1);
                 return last?.type === "student_text" ? prev.slice(0, -1) : prev;
               });
-              setIpBlocked(true);
-              return false;
             }
+            if (data.error === "IP_LIMIT_REACHED") { setIpBlocked(true); return false; }
+            if (data.error === "QUOTA_EXCEEDED") { setFeedbackOpen(true); return false; }
+            if (data.error === "GUEST_BLOCKED") { return false; }
+            throw new Error(`Worker returned status ${response.status}`);
           }
-          throw new Error(`Worker returned status ${response.status}`);
         }
 
         const reader = response.body?.getReader();
@@ -858,17 +863,18 @@ function TeachPage() {
           console.error("Failed to save session:", e);
         }
         try {
-          const next = await incrementTeachPromptCount(uid);
+          // Worker already incremented Firestore — update local UI state only
+          const next = promptCountRef.current + 1;
           setPromptCount(next);
+          promptCountRef.current = next;
           const remainingAfter = TEACH_PROMPT_LIMIT - next;
           if (next >= TEACH_PROMPT_LIMIT) {
             setFeedbackOpen(true);
-            // Delete R2 attachments — free user exhausted prompts, files no longer needed
+            // Delete from Firebase Storage
             const sessionStorageUrls = elementsRef.current
               .filter(el => el.type === "student_text")
               .flatMap(el => (el.attachments ?? []).map((a: UploadedAttachment) => a.storageUrl).filter(Boolean)) as string[];
             if (sessionStorageUrls.length > 0) {
-              // Delete from Firebase Storage
               sessionStorageUrls.forEach(url => {
                 const path = decodeURIComponent(url.split("/o/")[1]?.split("?")[0] ?? "");
                 if (path) deleteObject(storageRef(storage, path)).catch(() => {});
