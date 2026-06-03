@@ -527,6 +527,12 @@ export function useAirgap() {
     return () => unsubscribe();
   }, [user]);
 
+  // Poll every 3s — catches extension removal without page reload
+  useEffect(() => {
+    const id = setInterval(() => { void syncState(); }, 3000);
+    return () => clearInterval(id);
+  }, [syncState]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 

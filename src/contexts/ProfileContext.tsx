@@ -10,6 +10,7 @@ import {
   MIN_DAILY_GOAL_MINUTES,
   JEE_TARGET_YEARS,
   type JeeTargetYear,
+  type AppMode,
   normalizeDailyGoalMinutes,
   type UserProfile,
   targetDateFromYear,
@@ -19,7 +20,7 @@ interface ProfileContextType {
   profile: UserProfile | null;
   loading: boolean;
   targetDate: Date | null;
-  saveProfile: (input: { targetYear: JeeTargetYear; dailyGoalMinutes?: number }) => Promise<void>;
+  saveProfile: (input: { targetYear: JeeTargetYear; dailyGoalMinutes?: number; mode?: AppMode }) => Promise<void>;
   saveTargetYear: (year: JeeTargetYear) => Promise<void>;
   saveDailyGoalMinutes: (minutes: number) => Promise<void>;
 }
@@ -56,6 +57,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
               dailyGoalMinutes: normalizeDailyGoalMinutes(data.dailyGoalMinutes),
               dailyGoalChangedAt:
                 typeof data.dailyGoalChangedAt === "number" ? data.dailyGoalChangedAt : null,
+              mode: (data.mode === "professional" || data.mode === "jee") ? data.mode : "jee",
             });
           } else {
             setProfile(null);
@@ -82,9 +84,11 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const saveProfile = async ({
     targetYear,
     dailyGoalMinutes = DEFAULT_DAILY_GOAL_MINUTES,
+    mode,
   }: {
     targetYear: JeeTargetYear;
     dailyGoalMinutes?: number;
+    mode?: AppMode;
   }) => {
     if (!uid) return;
     if (!isValidDailyGoalMinutes(dailyGoalMinutes)) {
@@ -100,6 +104,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         targetYear,
         dailyGoalMinutes: goal,
         dailyGoalChangedAt: Date.now(),
+        ...(mode ? { mode } : {}),
       },
       { merge: true },
     );

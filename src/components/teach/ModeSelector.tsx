@@ -75,9 +75,15 @@ export function getModeConfig(mode: TeachMode): ModeConfig {
 interface ModeSelectorProps {
   onSelect: (mode: TeachMode) => void;
   isBlackboard: boolean;
+  /** When set, only these mode IDs are shown (used for JEE users' change-mode picker). */
+  restrictedModes?: TeachMode[];
 }
 
-export function ModeSelector({ onSelect, isBlackboard }: ModeSelectorProps) {
+export function ModeSelector({ onSelect, isBlackboard, restrictedModes }: ModeSelectorProps) {
+  const visibleModes = restrictedModes
+    ? MODES.filter(m => restrictedModes.includes(m.id))
+    : MODES;
+
   return (
     <div className="flex flex-col items-center justify-center h-full py-8 px-4">
       <motion.div
@@ -87,15 +93,15 @@ export function ModeSelector({ onSelect, isBlackboard }: ModeSelectorProps) {
         className="text-center mb-8"
       >
         <h2 className={`text-2xl font-bold mb-1.5 ${isBlackboard ? "text-neutral-100" : "text-neutral-900"}`}>
-          Choose your mode
+          {restrictedModes ? "Switch mode" : "Choose your mode"}
         </h2>
         <p className={`text-sm ${isBlackboard ? "text-neutral-400" : "text-neutral-500"}`}>
           Each mode has a dedicated persona and teaching style
         </p>
       </motion.div>
 
-      <div className="grid grid-cols-2 gap-3 w-full max-w-2xl md:grid-cols-3">
-        {MODES.map((mode, i) => (
+      <div className={`grid gap-3 w-full ${visibleModes.length <= 3 ? "max-w-xl grid-cols-1 sm:grid-cols-3" : "max-w-2xl grid-cols-2 md:grid-cols-3"}`}>
+        {visibleModes.map((mode, i) => (
           <motion.button
             key={mode.id}
             initial={{ opacity: 0, y: 12 }}

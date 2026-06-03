@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -20,6 +20,41 @@ import { NotesChromeProvider } from "@/contexts/NotesChromeContext";
 import { AdminProvider } from "@/contexts/AdminContext";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { Toaster } from "@/components/ui/sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+
+function EmailVerificationBanner() {
+  const { user, resendVerificationEmail } = useAuth();
+  const [sent, setSent] = useState(false);
+
+  const isEmailUser = user?.providerData?.[0]?.providerId === "password";
+  if (!user || !isEmailUser || user.emailVerified) return null;
+
+  const handleResend = async () => {
+    try {
+      await resendVerificationEmail();
+      setSent(true);
+      toast.success("Verification email sent.");
+    } catch {
+      toast.error("Could not send email. Try again shortly.");
+    }
+  };
+
+  return (
+    <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center justify-center gap-3 text-xs">
+      <span className="text-amber-700 dark:text-amber-400 font-medium">
+        Please verify your email address to secure your account.
+      </span>
+      <button
+        onClick={handleResend}
+        disabled={sent}
+        className="text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:opacity-70 disabled:opacity-40 transition-opacity"
+      >
+        {sent ? "Email sent" : "Resend email"}
+      </button>
+    </div>
+  );
+}
 
 function NotFoundComponent() {
   return (
@@ -77,9 +112,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "JEE Console" },
+      { title: "Matrix" },
       { name: "description", content: "Focus timer and consistency tracker for JEE preparation across Physics, Chemistry, and Math." },
-      { property: "og:site_name", content: "JEE Console" },
+      { property: "og:site_name", content: "Matrix" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -92,13 +127,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@graph": [
             {
               "@type": "WebSite",
-              name: "JEE Console",
+              name: "Matrix",
               url: "https://addict-to-consistency.lovable.app",
               description: "Focus timer and consistency tracker for JEE preparation.",
             },
             {
               "@type": "Organization",
-              name: "JEE Console",
+              name: "Matrix",
               url: "https://addict-to-consistency.lovable.app",
             },
           ],
@@ -136,7 +171,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const isNotesRoute = useRouterState({
-    select: (s) => s.location.pathname.startsWith("/notes"),
+    select: (s) => (s.resolvedLocation ?? s.location).pathname.startsWith("/notes"),
+  });
+  const isPrivacyRoute = useRouterState({
+    select: (s) => (s.resolvedLocation ?? s.location).pathname === "/privacy",
   });
 
   useEffect(() => {
@@ -153,8 +191,14 @@ function RootComponent() {
             <OnboardingGate>
               <AdminProvider>
               <NotesChromeProvider>
+                {isPrivacyRoute ? (
+                  <div className="min-h-screen bg-background text-foreground">
+                    <Outlet />
+                  </div>
+                ) : (
                 <div className="flex min-h-screen flex-col bg-background text-foreground">
                   <AppNav />
+                  <EmailVerificationBanner />
                   <main
                     className={cn(
                       "min-h-0 flex-1",
@@ -166,6 +210,7 @@ function RootComponent() {
                     <Outlet />
                   </main>
                 </div>
+                )}
               </NotesChromeProvider>
               </AdminProvider>
             </OnboardingGate>

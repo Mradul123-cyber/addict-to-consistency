@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sun, Moon, Maximize, Minimize, Volume2, VolumeX, History, Plus, RotateCcw, Square, Play } from "lucide-react";
+import { Sun, Moon, Maximize, Minimize, Volume2, VolumeX, History, Plus, RotateCcw, Square, Play, Sparkles } from "lucide-react";
 import { AIStateVisualizer } from "./AIStateVisualizer";
 import type { TeachBoardProps } from "@/types/teach";
 
@@ -31,6 +31,7 @@ export function TeachBoard({
   onStopReplay,
   onResume,
   modeBadge,
+  isGuest = false,
 }: TeachBoardProps & {
   onOpenHistory?: () => void;
   onNewSession?: () => void;
@@ -38,6 +39,7 @@ export function TeachBoard({
   onStopReplay?: () => void;
   onResume?: () => void;
   modeBadge?: string;
+  isGuest?: boolean;
 }) {
   const isBlackboard = config.mode === "blackboard";
   const styles = BOARD_STYLES[config.mode];
@@ -81,35 +83,39 @@ export function TeachBoard({
             <button onClick={toggleFullscreen} title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"} className={iconBtn}>
               {isFullscreen ? <Minimize size={15} className="text-red-400" /> : <Maximize size={15} className="text-cyan-500" />}
             </button>
-            <button onClick={onToggleTTS} title={ttsEnabled ? "Mute" : "Unmute"} className={iconBtn}>
-              {ttsEnabled ? <Volume2 size={15} className="text-emerald-400" /> : <VolumeX size={15} className="text-neutral-500" />}
+            <button
+              onClick={isGuest ? undefined : onToggleTTS}
+              title={isGuest ? "Sign up to enable voice" : ttsEnabled ? "Mute" : "Unmute"}
+              className={`${iconBtn} ${isGuest ? "opacity-30 cursor-not-allowed" : ""}`}
+            >
+              {(!isGuest && ttsEnabled) ? <Volume2 size={15} className="text-emerald-400" /> : <VolumeX size={15} className="text-neutral-500" />}
             </button>
           </div>
 
           <div className="flex items-center gap-3">
-            {isFullscreen && onStopReplay && (
+            {!isGuest && isFullscreen && onStopReplay && (
               <button onClick={onStopReplay} title="Stop replay" className={iconBtn}>
                 <Square size={15} />
               </button>
             )}
-            {isFullscreen && onResume && (
+            {!isGuest && isFullscreen && onResume && (
               <button onClick={onResume} title="Resume replay" className={iconBtn}>
                 <Play size={15} />
               </button>
             )}
-            {isFullscreen && onReplay && (
+            {!isGuest && isFullscreen && onReplay && (
               <button onClick={onReplay} title="Replay" className={iconBtn}>
                 <RotateCcw size={15} />
               </button>
             )}
-            {onNewSession && (
+            {!isGuest && onNewSession && (
               <button onClick={onNewSession} title="New session" className={iconBtn}>
                 <Plus size={15} />
               </button>
             )}
             {onOpenHistory && (
-              <button onClick={onOpenHistory} title="Session history" className={iconBtn}>
-                <History size={15} />
+              <button onClick={onOpenHistory} title={isGuest ? "Replay demo" : "Session history"} className={iconBtn}>
+                {isGuest ? <RotateCcw size={15} /> : <History size={15} />}
               </button>
             )}
             <AIStateVisualizer state={aiState} compact />

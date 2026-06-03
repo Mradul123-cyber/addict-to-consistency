@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LatexText } from "@/components/problems/LatexText";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, XCircle, MinusCircle, Trophy, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 export const Route = createFileRoute("/test-results/$testId")({
-  component: () => { const navigate = useNavigate(); navigate({ to: "/" }); return null; },
+  component: () => {
+    const navigate = useNavigate();
+    useEffect(() => {
+      navigate({ to: "/" });
+    }, [navigate]);
+    return null;
+  },
 });
 
 interface QuestionResult {

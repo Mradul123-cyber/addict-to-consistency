@@ -1,7 +1,6 @@
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus, vs } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Sparkles, AlertTriangle, Lightbulb } from "lucide-react";
 // Global flag — when true, all TypewriterText instances instantly complete
 const typewriterStopFlag = { current: false };
 export function stopAllTypewriters() {
@@ -9,14 +8,14 @@ export function stopAllTypewriters() {
   setTimeout(() => { typewriterStopFlag.current = false; }, 300);
 }
 
-// ai_3d_build sceneId → live scene controls
-const sceneRegistry = new Map<string, { add: (obj: import("@/types/teach").Scene3DObject) => void; render: () => void; capture: () => string | null }>();
+import type { ReactNode } from "react";
+import { lazy, Suspense } from "react";
+import { sceneRegistry } from "./sceneRegistry";
 export function captureScene(sceneId: string): string | null {
   return sceneRegistry.get(sceneId)?.capture() ?? null;
 }
-import type { ReactNode } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+const ThreeSceneRenderer = lazy(() => import("./ThreeSceneRenderer"));
+const LazyCodeBlock = lazy(() => import("./LazyCodeBlock"));
 import type {
   BoardElement,
   BoardMode,
@@ -28,7 +27,6 @@ import type {
   UploadedAttachment,
 } from "@/types/teach";
 import { BlockMath, InlineMath } from "react-katex";
-import "katex/dist/katex.min.css";
 
 export function getWritingDuration(text: string): number {
   let duration = 0;
@@ -46,10 +44,14 @@ export function getWritingDuration(text: string): number {
 }
 
 function renderBoldText(text: string, keyPrefix: string) {
-  const parts = text.split(/(\*[^*\n]+\*)/g);
+  // Handle **double** and *single* asterisk markdown — convert to bold, never show raw asterisks
+  const parts = text.split(/(\*{1,2}[^*\n]+\*{1,2})/g);
 
   return parts.map((part, index) => {
     const key = `${keyPrefix}-bold-${index}`;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={key}>{part.slice(2, -2)}</strong>;
+    }
     if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
       return <strong key={key}>{part.slice(1, -1)}</strong>;
     }
@@ -57,13 +59,22 @@ function renderBoldText(text: string, keyPrefix: string) {
   });
 }
 
+// Matches: \(...\) delimited math OR naked subscript/superscript like N_A(0), e^(-t), lambda_B
+const INLINE_MATH_RE = /(\\\(.+?\\\)|[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}()\-+]+)+)/g;
+
 function renderInlineContent(text: string) {
-  const parts = text.split(/(\\\(.+?\\\))/g);
+  const parts = text.split(INLINE_MATH_RE);
 
   return parts.map((part, index) => {
     const key = `inline-${index}`;
+    if (!part) return null;
     if (part.startsWith("\\(") && part.endsWith("\\)")) {
       return <InlineMath key={key} math={part.slice(2, -2)} />;
+    }
+    // Naked subscript/superscript — render as inline KaTeX
+    if (/^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}()\-+]+)+$/.test(part)) {
+      try { return <InlineMath key={key} math={part} />; }
+      catch { return renderBoldText(part, key); }
     }
     return renderBoldText(part, key);
   });
@@ -141,57 +152,50 @@ function StudentAttachmentPreview({
   attachments: UploadedAttachment[];
   isBlackboard: boolean;
 }) {
-  const visualAttachments = attachments.filter(
-    (attachment) => attachment.kind === "image" || attachment.kind === "pdf"
-  );
-  const primary = visualAttachments[0];
-  if (!primary?.dataUrl) return null;
+  const visual = attachments.filter(a => a.kind === "image" || a.kind === "pdf");
+  if (visual.length === 0) return null;
 
-  const stackCount = visualAttachments.length;
-  const showDocumentLayer = primary.kind === "pdf" || stackCount > 1;
+  const primary = visual[0];
+  const extra = visual.length - 1;
   const surface = isBlackboard
     ? "border-white/12 bg-neutral-950/70 shadow-black/50"
     : "border-neutral-200 bg-white shadow-neutral-300/60";
 
   return (
     <div className="relative my-3 w-full max-w-xl">
-      {stackCount > 2 && (
-        <div
-          className={`absolute inset-0 translate-x-4 translate-y-4 rotate-3 rounded-lg border ${surface}`}
-        />
+      {/* Stack layers */}
+      {visual.length > 2 && (
+        <div className={`absolute inset-0 translate-x-4 translate-y-4 rotate-3 rounded-lg border ${surface}`} />
       )}
-      {showDocumentLayer && (
-        <div
-          className={`absolute inset-0 translate-x-2 translate-y-2 rotate-1 rounded-lg border ${surface}`}
-        />
+      {visual.length > 1 && (
+        <div className={`absolute inset-0 translate-x-2 translate-y-2 rotate-1 rounded-lg border ${surface}`} />
       )}
 
-      <div
-        className={`relative overflow-hidden rounded-lg border shadow-xl ${surface}`}
-      >
-        {primary.kind === "image" ? (
-          <img
-            src={primary.dataUrl}
-            alt=""
-            className="max-h-[26rem] w-full object-contain"
-          />
-        ) : (
-          <iframe
-            title="Uploaded PDF preview"
-            src={`${primary.dataUrl}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
-            className="h-[26rem] w-full bg-white"
-          />
-        )}
+      {/* Primary card */}
+      <div className={`relative overflow-hidden rounded-lg border shadow-xl ${surface}`}>
+        {primary.kind === "image" && primary.storageUrl ? (
+          <img src={primary.storageUrl} alt="" className="max-h-[26rem] w-full object-contain" />
+        ) : primary.kind === "pdf" ? (
+          /* A4-style PDF card — shows filename + page count from extracted text */
+          <div className={`flex items-center gap-3 px-4 py-3.5 ${isBlackboard ? "bg-neutral-900/80" : "bg-neutral-50"}`}>
+            <div className={`flex h-10 w-8 shrink-0 flex-col items-center justify-center rounded border-2 text-[8px] font-bold uppercase tracking-widest ${isBlackboard ? "border-white/20 text-white/40" : "border-neutral-300 text-neutral-400"}`}>
+              <span>PDF</span>
+            </div>
+            <div className="min-w-0">
+              <p className={`truncate text-sm font-medium ${isBlackboard ? "text-white/80" : "text-neutral-800"}`}>{primary.name}</p>
+              <p className={`text-xs ${isBlackboard ? "text-white/35" : "text-neutral-400"}`}>
+                {primary.text ? `${primary.text.slice(0, 60).trim()}…` : "Pages extracted"}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
-        {stackCount > 1 && (
-          <div
-            className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${
-              isBlackboard
-                ? "bg-neutral-950/80 text-neutral-100 ring-1 ring-white/15"
-                : "bg-white/90 text-neutral-700 ring-1 ring-neutral-200"
-            }`}
-          >
-            +{stackCount - 1}
+        {/* +N badge for stacked attachments */}
+        {extra > 0 && (
+          <div className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-bold shadow-sm ${
+            isBlackboard ? "bg-neutral-950/80 text-neutral-100 ring-1 ring-white/15" : "bg-white/90 text-neutral-700 ring-1 ring-neutral-200"
+          }`}>
+            +{extra}
           </div>
         )}
       </div>
@@ -705,286 +709,6 @@ function Shape3DRenderer({
   );
 }
 
-function makeTextSprite(label: string, color: string) {
-  const canvas = document.createElement("canvas");
-  const font = "700 40px Inter, Arial, sans-serif";
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  if (ctx) { ctx.font = font; canvas.width = Math.max(512, Math.ceil(ctx.measureText(label).width) + 40); }
-  else { canvas.width = 768; }
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = font;
-    context.fillStyle = color;
-    context.fillText(label, 18, 72);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set((canvas.width / 512) * 1.6, 0.4, 1);
-  return sprite;
-}
-
-function addSceneLabel(scene: THREE.Scene, label: string | undefined, position: THREE.Vector3, color: string) {
-  if (!label) return;
-  const sprite = makeTextSprite(label, color);
-  sprite.position.copy(position);
-  scene.add(sprite);
-}
-
-function vectorFromTuple(tuple: [number, number, number] | undefined, fallback: [number, number, number]) {
-  const value = tuple ?? fallback;
-  return new THREE.Vector3(value[0], value[1], value[2]);
-}
-
-function physicsPoint(tuple: [number, number, number] | undefined, fallback: [number, number, number]) {
-  const value = tuple ?? fallback;
-  return new THREE.Vector3(value[0], value[2], value[1]);
-}
-
-function ThreeSceneRenderer({
-  title,
-  objects,
-  camera,
-  isBlackboard,
-  sceneId,
-}: {
-  title?: string;
-  objects: Scene3DObject[];
-  camera?: [number, number, number];
-  isBlackboard: boolean;
-  sceneId?: string;
-}) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const addObjectRef = useRef<((obj: Scene3DObject) => void) | null>(null);
-  const addAxesRef = useRef<(() => void) | null>(null);
-  const renderRef = useRef<(() => void) | null>(null);
-  const builtCountRef = useRef(0);
-  const axesAddedRef = useRef(false);
-  const [sceneVersion, setSceneVersion] = useState(0);
-
-  const [cx = 3.5, cy = 2.8, cz = 4.2] = camera ?? [];
-
-  // ── EFFECT 1: Scene infrastructure (recreate only when theme/camera changes) ──
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return;
-
-    builtCountRef.current = 0;
-    axesAddedRef.current = false;
-    addObjectRef.current = null;
-    addAxesRef.current = null;
-    renderRef.current = null;
-
-    const width = mount.clientWidth || 720;
-    const height = 420;
-    const textColor = isBlackboard ? "#f3f4f6" : "#111827";
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(isBlackboard ? "#060807" : "#ffffff");
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(width, height);
-    mount.appendChild(renderer.domElement);
-
-    const perspectiveCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    perspectiveCamera.position.set(cx, cy, cz);
-    perspectiveCamera.lookAt(0, 0, 0);
-
-    const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.55;
-
-    scene.add(new THREE.AmbientLight(0xffffff, isBlackboard ? 1.7 : 1.3));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-    dirLight.position.set(4, 5, 6);
-    scene.add(dirLight);
-
-    const addArrow = (start: THREE.Vector3, end: THREE.Vector3, color: string, label?: string, dashed?: boolean) => {
-      const dir = end.clone().sub(start);
-      const len = dir.length();
-      if (len === 0) return;
-      if (dashed) {
-        const pts = [start.clone(), end.clone()];
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineDashedMaterial({ color: new THREE.Color(color), dashSize: 0.08, gapSize: 0.04 });
-        const line = new THREE.Line(geo, mat);
-        line.computeLineDistances();
-        scene.add(line);
-      } else {
-        const arrow = new THREE.ArrowHelper(dir.normalize(), start, len, new THREE.Color(color), 0.18, 0.08);
-        scene.add(arrow);
-      }
-      if (label) addSceneLabel(scene, label, end.clone().add(new THREE.Vector3(0.08, 0.08, 0.08)), textColor);
-    };
-
-    const addAxes = () => {
-      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(1.6,0,0), "#ef4444", "x");
-      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,1.6), "#22c55e", "y");
-      addArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,1.6,0), "#3b82f6", "z");
-    };
-
-    const buildObject = (object: Scene3DObject) => {
-      const color = colorFor(object.color, isBlackboard ? "#67e8f9" : "#2563eb");
-      const opacity = object.opacity ?? (object.kind === "plane" ? 0.34 : 0.82);
-      const position = physicsPoint(object.position, [0, 0, 0]);
-
-      if (object.kind === "axes") { addAxes(); return; }
-
-      if (object.kind === "plane") {
-        const size = object.size ?? [2.2, 1.4];
-        const geo = new THREE.PlaneGeometry(size[0], size[1]);
-        const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, roughness: 0.55 });
-        const plane = new THREE.Mesh(geo, mat);
-        if (object.normal) {
-          // Diagonal plane — rotate to face given normal
-          const defNorm = new THREE.Vector3(0, 0, 1);
-          const tgtNorm = new THREE.Vector3(...object.normal).normalize();
-          plane.quaternion.setFromUnitVectors(defNorm, tgtNorm);
-        } else {
-          if (object.plane === "xy") plane.rotation.x = -Math.PI / 2;
-          else if (object.plane === "yz") plane.rotation.y = Math.PI / 2;
-        }
-        plane.position.copy(position);
-        scene.add(plane);
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: textColor }));
-        edges.quaternion.copy(plane.quaternion);
-        edges.rotation.copy(plane.rotation);
-        edges.position.copy(position);
-        scene.add(edges);
-        addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.15, 0.1)), textColor);
-        return;
-      }
-
-      if (object.kind === "vector") {
-        addArrow(position, physicsPoint(object.end, [1,0,0]), color, object.label, object.dashed);
-        return;
-      }
-
-      if (object.kind === "cube") {
-        const sz = (object.size?.length === 3 ? object.size : [1, 1, 1]) as [number, number, number];
-        const geo = new THREE.BoxGeometry(...sz);
-        if (object.wireframe) {
-          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color, linewidth: 2 }));
-          edges.position.copy(position);
-          scene.add(edges);
-        } else {
-          const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, roughness: 0.55 });
-          const cube = new THREE.Mesh(geo, mat);
-          cube.position.copy(position);
-          scene.add(cube);
-        }
-        if (object.label) addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(sz[0]/2+0.12, sz[1]/2+0.12, sz[2]/2+0.12)), textColor);
-        return;
-      }
-
-      if (object.kind === "sphere" || object.kind === "point") {
-        const geo = new THREE.SphereGeometry(object.radius ?? (object.kind === "point" ? 0.06 : 0.3), 32, 16);
-        const mat = new THREE.MeshStandardMaterial({ color, transparent: true, opacity, roughness: 0.55, wireframe: object.wireframe === true });
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.position.copy(position);
-        scene.add(sphere);
-        if (object.label) addSceneLabel(scene, object.label, position.clone().add(new THREE.Vector3(0.1, 0.1, 0.1)), textColor);
-        return;
-      }
-
-      if (object.kind === "line_charge") {
-        const axis = object.axis ?? "y";
-        const geo = new THREE.CylinderGeometry(0.035, 0.035, 2.6, 24);
-        const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-        const line = new THREE.Mesh(geo, mat);
-        if (axis === "x") line.rotation.z = Math.PI / 2;
-        if (axis === "y") line.rotation.x = Math.PI / 2;
-        line.position.copy(position);
-        scene.add(line);
-        addSceneLabel(scene, object.label || "line charge", position.clone().add(new THREE.Vector3(0.12, 1.36, 0.12)), textColor);
-      }
-    };
-
-    // Expose for incremental use
-    addObjectRef.current = buildObject;
-    addAxesRef.current = addAxes;
-    renderRef.current = () => renderer.render(scene, perspectiveCamera);
-
-    // Register in global registry for ai_3d_build + vision capture
-    if (sceneId) {
-      sceneRegistry.set(sceneId, {
-        add: buildObject,
-        render: () => renderer.render(scene, perspectiveCamera),
-        capture: () => {
-          renderer.render(scene, perspectiveCamera);
-          return renderer.domElement.toDataURL("image/jpeg", 0.85);
-        },
-      });
-    }
-
-    let disposed = false;
-    const animate = () => {
-      if (disposed) return;
-      controls.update();
-      renderer.render(scene, perspectiveCamera);
-      requestAnimationFrame(animate);
-    };
-    animate();
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      const nextW = entries[0]?.contentRect.width || width;
-      renderer.setSize(nextW, height);
-      perspectiveCamera.aspect = nextW / height;
-      perspectiveCamera.updateProjectionMatrix();
-    });
-    resizeObserver.observe(mount);
-
-    // Trigger incremental effect to build initial objects
-    setSceneVersion(v => v + 1);
-
-    return () => {
-      disposed = true;
-      if (sceneId) sceneRegistry.delete(sceneId);
-      addObjectRef.current = null;
-      addAxesRef.current = null;
-      renderRef.current = null;
-      resizeObserver.disconnect();
-      controls.dispose();
-      renderer.dispose();
-      scene.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
-        }
-        if (obj instanceof THREE.Sprite) { obj.material.map?.dispose(); obj.material.dispose(); }
-      });
-      mount.removeChild(renderer.domElement);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBlackboard, cx, cy, cz, sceneId]);
-
-  // ── EFFECT 2: Incrementally add new objects as objects array grows ──────────
-  useEffect(() => {
-    if (!addObjectRef.current) return;
-    if (builtCountRef.current === 0 && !axesAddedRef.current && !objects.some(o => o.kind === "axes")) {
-      addAxesRef.current?.();
-      axesAddedRef.current = true;
-    }
-    const newObjs = objects.slice(builtCountRef.current);
-    if (newObjs.length === 0) return;
-    newObjs.forEach(obj => addObjectRef.current!(obj));
-    builtCountRef.current = objects.length;
-    renderRef.current?.();
-  // sceneVersion ensures this reruns after scene re-init
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneVersion, objects.length]);
-
-  return (
-    <VisualFrame title={title} isBlackboard={isBlackboard}>
-      <div ref={mountRef} className="h-[420px] w-full" />
-    </VisualFrame>
-  );
-}
-
 // ─── Math Renderer ────────────────────────────────────────────────────────────
 
 interface MathRendererProps {
@@ -993,18 +717,17 @@ interface MathRendererProps {
 }
 
 export function MathRenderer({ latex, isBlackboard }: MathRendererProps) {
-  const bgBox = isBlackboard ? "bg-cyan-500/5" : "bg-neutral-500/5";
-  const borderBox = isBlackboard ? "border-cyan-500/20" : "border-neutral-200";
-  const textColor = isBlackboard ? "text-cyan-200" : "text-cyan-800";
-
   return (
     <div className="my-6 flex justify-start pl-2">
       <motion.div
         initial={{ opacity: 0, scaleX: 0 }}
         animate={{ opacity: 1, scaleX: 1 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        style={{ transformOrigin: "left" }}
-        className={`flex items-center justify-start rounded-xl border px-8 py-5 ${bgBox} ${borderBox} relative overflow-hidden transition-all duration-300 shadow-md ${textColor}`}
+        style={{ transformOrigin: "left", color: "#155e75", boxShadow: isBlackboard
+          ? "rgba(0, 0, 0, 0.17) 0px -23px 25px 0px inset, rgba(0, 0, 0, 0.15) 0px -36px 30px 0px inset, rgba(0, 0, 0, 0.1) 0px -79px 40px 0px inset, rgba(0, 0, 0, 0.06) 0px 2px 1px, rgba(0, 0, 0, 0.09) 0px 4px 2px, rgba(0, 0, 0, 0.09) 0px 8px 4px, rgba(0, 0, 0, 0.09) 0px 16px 8px, rgba(0, 0, 0, 0.09) 0px 32px 16px"
+          : "rgba(0, 0, 0, 0.07) 0px -23px 25px 0px inset, rgba(0, 0, 0, 0.06) 0px -36px 30px 0px inset, rgba(0, 0, 0, 0.04) 0px -79px 40px 0px inset, rgba(0, 0, 0, 0.03) 0px 2px 1px, rgba(0, 0, 0, 0.04) 0px 4px 2px, rgba(0, 0, 0, 0.04) 0px 8px 4px, rgba(0, 0, 0, 0.04) 0px 16px 8px, rgba(0, 0, 0, 0.04) 0px 32px 16px"
+        }}
+        className="flex items-center justify-start rounded-xl border-0 px-8 py-5 bg-white relative overflow-hidden transition-all duration-300"
       >
         <div className="text-xl md:text-2xl select-all font-sans">
           <BlockMath math={latex} />
@@ -1268,21 +991,13 @@ export function BoardRenderer({
   const items = groupElements(elements);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll whenever a new element lands
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const scrollContainer = sentinel?.closest<HTMLElement>("[data-teach-board-scroll]");
-
-    scrollContainer?.scrollTo({
-      top: scrollContainer.scrollHeight,
-      behavior: "smooth",
-    });
+    scrollContainer?.scrollTo({ top: scrollContainer.scrollHeight, behavior: "smooth" });
   }, [elements.length]);
 
-  return (
-    <MotionConfig reducedMotion={instant ? "always" : "never"}>
-    <div className="flex flex-col gap-y-8 pb-12">
-      {items.map((item, idx) => {
+  const renderItem = useCallback((item: ReturnType<typeof groupElements>[number], idx: number) => {
         // ── Options group (buffered 2×2) ──────────────────────────────────────
         if (item.kind === "options") {
           const groupId = item.elements[0].id;
@@ -1385,14 +1100,16 @@ export function BoardRenderer({
 
           case "ai_3d_scene":
             return (
-              <ThreeSceneRenderer
-                key={el.id}
-                title={el.title}
-                objects={el.objects}
-                camera={el.camera}
-                isBlackboard={isBlackboard}
-                sceneId={el.sceneId}
-              />
+              <VisualFrame key={el.id} title={el.title} isBlackboard={isBlackboard}>
+                <Suspense fallback={<div className="h-[420px] w-full animate-pulse bg-muted/20 rounded-lg" />}>
+                  <ThreeSceneRenderer
+                    objects={el.objects}
+                    camera={el.camera}
+                    isBlackboard={isBlackboard}
+                    sceneId={el.sceneId}
+                  />
+                </Suspense>
+              </VisualFrame>
             );
 
           // ── Graph ────────────────────────────────────────────────────────────
@@ -1432,74 +1149,82 @@ export function BoardRenderer({
               />
             );
 
-          // ── Highlight ────────────────────────────────────────────────────────
+          // ── Highlight (Chalkboard Masterclass) ───────────────────────────────
           case "ai_highlight":
             return (
               <motion.div
                 key={el.id}
-                initial={{ opacity: 0, scale: 0.97 }}
+                initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-                className="my-6 flex justify-start pl-2"
+                transition={{ duration: 0.45 }}
+                className="my-6 pl-2"
               >
-                <div
-                  className={`rounded-xl border-2 px-8 py-5 shadow-lg transition-all duration-300 ${isBlackboard
-                      ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-200 shadow-emerald-500/10"
-                      : "border-emerald-500/40 bg-emerald-50 text-emerald-800"
-                    }`}
-                >
-                  <div className="text-xs font-bold uppercase tracking-widest mb-2 opacity-60">
-                    ✦ Key Result
-                  </div>
-                  <div className="text-xl md:text-2xl select-all font-sans">
-                    <BlockMath math={el.latex} />
-                  </div>
+                <div className={`select-all font-sans text-xl md:text-2xl ${
+                  isBlackboard ? "text-emerald-200" : "text-emerald-800"
+                }`}>
+                  <BlockMath math={el.latex} />
                 </div>
               </motion.div>
             );
 
-          // ── Warning ──────────────────────────────────────────────────────────
+          // ── Warning (Chalkboard Masterclass) ─────────────────────────────────
           case "ai_warning":
             return (
               <motion.div
                 key={el.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="max-w-3xl my-4"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                className="max-w-3xl my-4 rotate-[0.25deg]"
               >
                 <div
-                  className={`rounded-xl border p-5 shadow-sm transition-all duration-300 ${isBlackboard
-                      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-                      : "border-amber-400/40 bg-amber-50 text-amber-800"
-                    }`}
+                  className={`relative rounded-lg p-5 transition-all duration-300 ${
+                    isBlackboard
+                      ? "bg-amber-950/15 text-amber-200/90 shadow-[0_0_18px_rgba(245,158,11,0.04)] border-[2.5px] border-dashed border-amber-500/50"
+                      : "bg-amber-500/5 text-amber-900 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border-[2.5px] border-dashed border-amber-600/70"
+                  }`}
                 >
-                  <div className="text-xs font-bold uppercase tracking-wider mb-2">⚠ JEE Trap</div>
-                  <p className="text-lg font-medium leading-relaxed antialiased">
+                  {isBlackboard && (
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-amber-400/20 opacity-60" />
+                  )}
+                  <div className={`flex items-center gap-2 mb-2 font-serif italic text-sm tracking-wide lowercase opacity-80 ${
+                    isBlackboard ? "text-amber-400" : "text-amber-700"
+                  }`}>
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>warning</span>
+                  </div>
+                  <p className="text-base font-medium leading-relaxed antialiased tracking-wide">
                     <PlainText text={el.content} />
                   </p>
                 </div>
               </motion.div>
             );
 
-          // ── Tip ──────────────────────────────────────────────────────────────
+          // ── Tip (Chalkboard Masterclass) ──────────────────────────────────────
           case "ai_tip":
             return (
               <motion.div
                 key={el.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
                 className="max-w-3xl my-4"
               >
                 <div
-                  className={`rounded-xl border p-5 shadow-sm transition-all duration-300 ${isBlackboard
-                      ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-300"
-                      : "border-cyan-400/40 bg-cyan-50 text-cyan-800"
-                    }`}
+                  className={`rounded-xl border-0 px-8 py-5 transition-all duration-300 ${
+                    isBlackboard ? "text-amber-100" : "text-amber-900"
+                  }`}
+                  style={{ boxShadow: "rgba(6, 24, 44, 0.4) 0px 0px 0px 2px, rgba(6, 24, 44, 0.65) 0px 4px 6px -1px, rgba(255, 255, 255, 0.08) 0px 1px 0px inset",
+                    background: isBlackboard ? "rgba(30,20,5,0.6)" : "rgba(255,251,235,0.9)"
+                  }}
                 >
-                  <div className="text-xs font-bold uppercase tracking-wider mb-2">⚡ JEE Shortcut</div>
-                  <p className="text-lg font-medium leading-relaxed antialiased">
+                  <div className={`flex items-center gap-1.5 mb-3 text-xs font-semibold uppercase tracking-widest ${
+                    isBlackboard ? "text-amber-400 opacity-70" : "text-amber-800 opacity-90"
+                  }`}>
+                    <Lightbulb className="h-3.5 w-3.5 shrink-0" />
+                    <span>Tip</span>
+                  </div>
+                  <p className="text-base font-medium leading-relaxed antialiased">
                     <PlainText text={el.content} />
                   </p>
                 </div>
@@ -1546,37 +1271,23 @@ export function BoardRenderer({
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: idx * 0.05 }}
-                className="ml-4 max-w-3xl my-2"
+                className="ml-4 my-2 max-w-3xl flex items-center gap-4"
               >
                 <div
-                  className={`flex gap-4 items-start rounded-xl border px-5 py-4 transition-all duration-300 ${isBlackboard
-                      ? "border-white/8 bg-white/4"
-                      : "border-neutral-200/70 bg-neutral-50"
-                    }`}
+                  className={`flex-1 rounded-xl border-0 px-6 py-3 transition-all duration-300 select-all font-sans text-lg ${isBlackboard ? "bg-white/8 text-cyan-200" : "bg-white text-cyan-800"}`}
+                  style={{ boxShadow: isBlackboard
+                    ? "rgba(0,0,0,0.4) 3px 3px 6px 0px inset, rgba(255,255,255,0.05) -3px -3px 6px 1px inset"
+                    : "rgb(204, 219, 232) 3px 3px 6px 0px inset, rgba(255, 255, 255, 0.5) -3px -3px 6px 1px inset"
+                  }}
                 >
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black mt-1 ${isBlackboard
-                        ? "bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/30"
-                        : "bg-cyan-100 text-cyan-700 ring-1 ring-cyan-300/50"
-                      }`}
-                  >
-                    {el.number}
-                  </div>
-                  <div className="flex flex-col gap-2 flex-1 min-w-0">
-                    <span
-                      className={`text-sm font-medium tracking-wide ${isBlackboard ? "text-neutral-400" : "text-neutral-500"
-                        }`}
-                    >
-                      <PlainText text={el.label} />
-                    </span>
-                    <div
-                      className={`text-lg select-all font-sans ${isBlackboard ? "text-cyan-200" : "text-cyan-800"
-                        }`}
-                    >
-                      <BlockMath math={el.latex} />
-                    </div>
-                  </div>
+                  <BlockMath math={el.latex} />
                 </div>
+                <span className={`text-2xl font-black shrink-0 select-none flex items-center gap-1 ${
+                  isBlackboard ? "text-white/80" : "text-neutral-900"
+                }`}>
+                  <span className="text-base font-light opacity-40">──</span>
+                  {el.number}
+                </span>
               </motion.div>
             );
 
@@ -1650,21 +1361,17 @@ export function BoardRenderer({
                   </p>
                 )}
                 <div className="rounded-xl overflow-hidden border border-white/10 text-sm">
-                  <SyntaxHighlighter
-                    language={el.language || "text"}
-                    style={isBlackboard ? vscDarkPlus : vs}
-                    customStyle={{
-                      margin: 0,
-                      padding: "1rem 1.25rem",
-                      background: isBlackboard ? "#0d1117" : "#f6f8fa",
-                      fontSize: "0.85rem",
-                      lineHeight: 1.6,
-                    }}
-                    showLineNumbers={(el.code.split("\n").length > 4)}
-                    wrapLines
-                  >
-                    {el.code}
-                  </SyntaxHighlighter>
+                  <Suspense fallback={
+                    <pre className="p-4 text-sm leading-relaxed" style={{ background: isBlackboard ? "#0d1117" : "#f6f8fa" }}>
+                      {el.code}
+                    </pre>
+                  }>
+                    <LazyCodeBlock
+                      code={el.code}
+                      language={el.language || "text"}
+                      isBlackboard={isBlackboard}
+                    />
+                  </Suspense>
                 </div>
               </motion.div>
             );
@@ -1701,9 +1408,13 @@ export function BoardRenderer({
           default:
             return null;
         }
-      })}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBlackboard, checkpointElementId, optionAnswers, onCheckpointAnswer, onOptionSelect, instant]);
 
-      {/* Auto-scroll sentinel */}
+  return (
+    <MotionConfig reducedMotion={instant ? "always" : "never"}>
+    <div className="flex flex-col gap-y-8 pb-12">
+      {items.map((item, idx) => renderItem(item, idx))}
       <div ref={sentinelRef} className="h-1 w-full" />
     </div>
     </MotionConfig>

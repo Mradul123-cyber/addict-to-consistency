@@ -135,8 +135,7 @@
     <main>
       <h1>Install JEE Airgap Shield</h1>
       <p>
-        Load the extension once, then refresh the dashboard tab. Extensions are loaded temporarily
-        and last until you close the browser.
+        Airgap Shield is available on the Chrome Web Store — install it in seconds, no developer mode needed.
       </p>
 
       <div class="tabs">
@@ -146,41 +145,32 @@
 
       <div id="tab-chrome" class="tab-content active">
         <ol>
-          <li>Click "Download Extension (.zip)" below, unzip it.</li>
-          <li>Open <code>chrome://extensions</code> in your address bar.</li>
-          <li>Toggle <strong>Developer mode</strong> ON (top-right).</li>
-          <li>Click <strong>Load unpacked</strong> → select the <code>extension</code> folder.</li>
+          <li>Click <strong>"Add to Chrome"</strong> below — it opens the Chrome Web Store.</li>
+          <li>Click <strong>Add to Chrome</strong> on the store page and confirm.</li>
           <li>Return here and refresh the dashboard.</li>
         </ol>
       </div>
 
       <div id="tab-firefox" class="tab-content">
         <ol>
-          <li>Click "Download Extension (.zip)" below, unzip it.</li>
-          <li>Open <code>about:debugging#/runtime/this-firefox</code> in your address bar.</li>
-          <li>Click <strong>Load Temporary Add-on</strong> → navigate into the <code>extension/firefox</code> folder → select any file.</li>
+          <li>Click <strong>"Add to Firefox"</strong> below — it opens the Firefox Add-ons store.</li>
+          <li>Click <strong>Add to Firefox</strong> on the store page and confirm.</li>
           <li>Return here and refresh the dashboard.</li>
         </ol>
-        <p class="note">
-          Temporary add-ons last only until Firefox is closed. For permanent installation, submit to the Firefox Add-ons store.
-        </p>
       </div>
 
       <div class="actions">
         <a
           id="download-link"
           class="button button-primary"
-          href="https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension"
+          href="https://chromewebstore.google.com/detail/airgap-shield/didhcfefeekjdhofimlkdgcjbcmhmgbo"
           target="_blank"
           rel="noreferrer"
         >
-          Download Chrome Extension (.zip)
+          Add to Chrome — Web Store
         </a>
-        <a class="button button-secondary" href="chrome://extensions" id="chrome-link">
-          Open chrome://extensions
-        </a>
-        <a class="button button-secondary" href="about:debugging#/runtime/this-firefox" id="firefox-link" style="display:none">
-          Open about:debugging
+        <a class="button button-secondary" href="https://addons.mozilla.org/en-US/firefox/addon/airgap-shield/" id="firefox-link" target="_blank" rel="noreferrer" style="display:none">
+          Add to Firefox — Add-ons Store
         </a>
         <a class="button button-secondary" href="https://addict-to-consistency.lovable.app/">
           Back to Dashboard
@@ -189,9 +179,6 @@
     </main>
 
     <script>
-      var CHROME_DOWNLOAD = "https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension";
-      var FIREFOX_DOWNLOAD = "https://download-directory.github.io/?url=https://github.com/Mradul123-cyber/addict-to-consistency/tree/main/extension/firefox";
-
       function switchTab(browser) {
         document.querySelectorAll(".tab-btn").forEach(function(btn) {
           btn.classList.remove("active");
@@ -203,17 +190,8 @@
         });
         document.getElementById("tab-" + browser).classList.add("active");
 
-        document.getElementById("chrome-link").style.display = browser === "chrome" ? "inline-flex" : "none";
         document.getElementById("firefox-link").style.display = browser === "firefox" ? "inline-flex" : "none";
-
-        var link = document.getElementById("download-link");
-        if (browser === "firefox") {
-          link.href = FIREFOX_DOWNLOAD;
-          link.textContent = "Download Firefox Extension (.zip)";
-        } else {
-          link.href = CHROME_DOWNLOAD;
-          link.textContent = "Download Chrome Extension (.zip)";
-        }
+        document.getElementById("download-link").style.display = browser === "chrome" ? "inline-flex" : "none";
       }
     </script>
   </body>

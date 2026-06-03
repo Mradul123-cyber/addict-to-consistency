@@ -16,6 +16,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StudyCalendar } from "@/components/StudyCalendar";
 import { TaskPanel } from "@/components/TaskPanel";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,9 +31,9 @@ import type { Track } from "@/lib/store";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — JEE Console" },
+      { title: "Dashboard — Matrix" },
       { name: "description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
-      { property: "og:title", content: "JEE Console Dashboard" },
+      { property: "og:title", content: "Matrix Dashboard" },
       { property: "og:description", content: "Track your JEE countdown, daily consistency quotient, and a 28-day study history on a single dashboard." },
       { property: "og:url", content: "https://addict-to-consistency.lovable.app/" },
     ],
@@ -256,11 +257,53 @@ function WeeklyDigestCard({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-8 w-36" />
+        </div>
+      </div>
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-4 w-28" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Skeleton className="h-10 w-20" />
+              <Skeleton className="h-3 w-36" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const navigate = useNavigate();
   const [cqDialogOpen, setCqDialogOpen] = useState(false);
   const { sessions, tracks, calendarTasks } = useStore();
-  const { profile, targetDate } = useProfile();
+  const { profile, loading, targetDate } = useProfile();
+
+  if (loading) return <DashboardSkeleton />;
+
+  // Redirect general learning users away from dashboard
+  if (profile?.mode === "professional") {
+    navigate({ to: "/teach" });
+    return null;
+  }
   const days = targetDate ? daysUntilExam(targetDate) : 0;
   const examLabel = profile ? formatExamDate(profile.targetYear) : "";
   const dailyGoalMinutes = profile?.dailyGoalMinutes ?? DEFAULT_DAILY_GOAL_MINUTES;
@@ -269,9 +312,7 @@ function Dashboard() {
   const streak = currentStreak(sessions, new Date(), dailyGoalMinutes);
   const best = bestStreak(sessions, dailyGoalMinutes);
 
-  // Weekly digest — auto-open on Mondays
-  const isMonday = new Date().getDay() === 1;
-  const [digestOpen, setDigestOpen] = useState(isMonday);
+  const [digestOpen, setDigestOpen] = useState(false);
   const todayStr = new Date().toDateString();
   const digest = useMemo(
     () => weeklyDigest(sessions, new Date(), dailyGoalMinutes),
@@ -317,7 +358,7 @@ function Dashboard() {
   return (
     <>
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Stay consistent. The exam doesn't move.</p>
@@ -335,9 +376,6 @@ function Dashboard() {
               <ChevronDown className="h-3.5 w-3.5" />
             )}
             {digestOpen ? "Hide digest" : "Weekly Digest"}
-            {!digestOpen && isMonday && (
-              <span className="ml-0.5 flex h-1.5 w-1.5 rounded-full bg-indigo-500" />
-            )}
           </Button>
           <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
             <Link to="/focus">Start focus session</Link>
@@ -440,19 +478,30 @@ function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
-              {Object.entries(breakdown).map(([subject, mins]) => {
+              {Object.entries(breakdown).map(([subject, mins], idx) => {
                 const isUncategorized = subject === "Uncategorized";
                 const percent = totalMinutes > 0 ? (mins / totalMinutes) * 100 : 0;
+                const subjectColorMap: Record<string, string> = {
+                  physics: "hover:text-blue-500",
+                  maths: "hover:text-yellow-500",
+                  mathematics: "hover:text-yellow-500",
+                  chemistry: "hover:text-green-500",
+                  "physical chemistry": "hover:text-emerald-500",
+                  "organic chemistry": "hover:text-orange-500",
+                  "inorganic chemistry": "hover:text-red-500",
+                };
+                const fallbackColors = ["hover:text-violet-500", "hover:text-pink-500", "hover:text-cyan-500"];
+                const hoverColor = subjectColorMap[subject.toLowerCase()] ?? fallbackColors[idx % fallbackColors.length];
                 return (
                   <div key={subject} className="space-y-1">
                     <div
-                      className={`flex justify-between text-xs ${isUncategorized ? "" : "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.01] hover:text-primary"}`}
+                      className={`flex justify-between text-xs ${isUncategorized ? "" : "cursor-pointer transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.01]"}`}
                       onClick={() => {
                         if (isUncategorized) return;
                         navigate({ to: "/focus", search: { subject } });
                       }}
                     >
-                      <span className="font-medium text-foreground">{subject}</span>
+                      <span className={`font-medium text-foreground transition-colors duration-200 ${!isUncategorized ? hoverColor : ""}`}>{subject}</span>
                       <span className="text-muted-foreground tabular-nums">{mins}m</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">

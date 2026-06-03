@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, Suspense } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { TeachBoard } from "@/components/teach/TeachBoard";
 import { BottomDock } from "@/components/teach/BottomDock";
 import { BoardRenderer, getWritingDuration } from "@/components/teach/BoardRenderer";
 import { speakElement, stopCurrentSpeech } from "@/lib/tts";
 import { ErrorCard } from "@/components/teach/ErrorCard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type {
   AIState,
   BoardConfig,
@@ -16,20 +18,29 @@ import type {
 } from "@/types/teach";
 import { nanoid } from "nanoid";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import {
   TEACH_PROMPT_LIMIT,
   getTeachPromptCount,
   incrementTeachPromptCount,
+  resetTeachPromptCount,
 } from "@/lib/teach-quota";
 import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
-import { SessionHistory } from "@/components/teach/SessionHistory";
+import { lazy } from "react";
+const UpgradeDialog = lazy(() => import("@/components/teach/UpgradeDialog").then(m => ({ default: m.UpgradeDialog })));
+const SessionHistory = lazy(() => import("@/components/teach/SessionHistory").then(m => ({ default: m.SessionHistory })));
 import { ModeSelector, getModeConfig } from "@/components/teach/ModeSelector";
-import type { TeachMode } from "@/types/teach";
-import { createTeachSession, saveTeachSession, type TeachSession } from "@/lib/teach-sessions";
+import type { TeachMode, SubMode } from "@/types/teach";
+import { createTeachSession, saveTeachSession, updateTeachSessionElements, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
 import { setReplayMode } from "@/lib/tts";
+import { checkDeviceAllowed, registerDeviceUsage } from "@/lib/device-guard";
 import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
 import { toast } from "sonner";
-import { RotateCcw, Square, Play, Pause } from "lucide-react";
+import { storage } from "@/lib/firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { RotateCcw, Square, Play, Pause, Sparkles, FileWarning, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { getAttachmentUsage, incrementAttachmentUsage, FREE_PDF_LIMIT, FREE_IMAGE_LIMIT } from "@/lib/attachment-quota";
 
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 // NOTE: Worker now injects its own copy — this is kept for history reconstruction only.
@@ -218,7 +229,7 @@ HARD CONSTRAINTS — NEVER VIOLATE
 export const Route = createFileRoute("/teach")({
   head: () => ({
     meta: [
-      { title: "Teaching Board — JEE Console" },
+      { title: "Teaching Board — Matrix" },
       {
         name: "description",
         content: "AI-powered interactive teaching board for JEE concepts.",
@@ -263,20 +274,65 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
+const PDF_MAX_BYTES = 15 * 1024 * 1024; // 15MB
+
+async function extractPdfContent(
+  file: File,
+  maxPages: number
+): Promise<{ text: string; pageImages: string[]; totalPages: number }> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url
+  ).href;
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const totalPages = pdf.numPages;
+  const pagesToRead = Math.min(totalPages, maxPages);
+  let text = "";
+  const pageImages: string[] = [];
+  for (let i = 1; i <= pagesToRead; i++) {
+    const page = await pdf.getPage(i);
+    // Extract text
+    const content = await page.getTextContent();
+    text += content.items.map((item: any) => ("str" in item ? item.str : "")).join(" ") + "\n";
+    // Render page to canvas for vision (diagrams, figures, equations as images)
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      await (page.render as any)({ canvasContext: ctx, viewport }).promise;
+      pageImages.push(canvas.toDataURL("image/jpeg", 0.75));
+    }
+  }
+  return { text: text.trim(), pageImages, totalPages };
 }
 
-function getAttachmentKind(file: File): UploadedAttachmentKind {
-  if (file.type.startsWith("image/")) return "image";
-  if (file.type === "application/pdf") return "pdf";
-  if (file.type.startsWith("text/") || /\.(txt|md|csv)$/i.test(file.name)) return "text";
-  return "file";
+// ─── Guest demo lesson (plays instead of real API for anonymous users) ──────────
+const DEMO_ELEMENTS = [
+  { type: "ai_header" as const, content: "Newton's Second Law", speak: "Newton's Second Law." },
+  { type: "ai_body" as const, content: "Here's the thing most students get wrong — force doesn't create velocity, it creates change in velocity. That's the whole law in one sentence.", speak: "Here's the thing most students get wrong — force doesn't create velocity, it creates change in velocity. That's the whole law in one sentence." },
+  { type: "ai_body" as const, content: "We start from momentum. Force is defined as the rate of change of momentum:", speak: "We start from momentum. Force is defined as the rate of change of momentum:" },
+  { type: "ai_math" as const, latex: "F = \\frac{dp}{dt} = \\frac{d(mv)}{dt}", speak: "F equals d p by d t, which equals d of m times v, by d t." },
+  { type: "ai_body" as const, content: "For constant mass, this collapses to the form you know:", speak: "For constant mass, this collapses to the form you know:" },
+  { type: "ai_math" as const, latex: "F = m \\cdot a", speak: "F equals m times a." },
+  { type: "ai_highlight" as const, latex: "\\boxed{F = m \\cdot a}", speak: "And that gives us our result — F equals m times a." },
+  { type: "ai_tip" as const, content: "In JEE, always draw a free-body diagram before writing the equation. Forces you miss in the diagram, you miss in the equation.", speak: "In JEE, always draw a free-body diagram before writing the equation. Forces you miss in the diagram, you miss in the equation." },
+];
+
+function useIsPortraitMobile() {
+  const [isPortrait, setIsPortrait] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 768 && window.innerHeight > window.innerWidth
+  );
+  useEffect(() => {
+    const check = () => setIsPortrait(window.innerWidth < 768 && window.innerHeight > window.innerWidth);
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check);
+    return () => { window.removeEventListener("resize", check); window.removeEventListener("orientationchange", check); };
+  }, []);
+  return isPortrait;
 }
 
 function TeachPage() {
@@ -287,6 +343,9 @@ function TeachPage() {
   });
   const [aiState, setAiState] = useState<AIState>("idle");
   const [elements, setElements] = useState<BoardElement[]>([]);
+  const [visibleFrom, setVisibleFrom] = useState(0);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const loadingEarlierRef = useRef(false);
   const isRevealingRef = useRef(false);
   const pendingQueueRef = useRef<BoardElement[]>([]);
   const drainPromiseRef = useRef<Promise<void> | null>(null);
@@ -295,6 +354,9 @@ function TeachPage() {
     isRecording: false,
   });
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
+  const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
+  const [pdfTruncationNotice, setPdfTruncationNotice] = useState<string | null>(null);
+  const [filesRemovedNotice, setFilesRemovedNotice] = useState(false);
 
   // ── Checkpoint state ──
   const [checkpointElementId, setCheckpointElementId] = useState<string | null>(null);
@@ -315,16 +377,32 @@ function TeachPage() {
   // ── Mode ──
   const [mode, setMode] = useState<TeachMode | null>(null);
   const modeRef = useRef<TeachMode | null>(null);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
+  const [subMode, setSubMode] = useState<SubMode>("general");
+  const subModeRef = useRef<SubMode>("general");
+  const [pendingSubMode, setPendingSubMode] = useState<SubMode | null>(null);
+  useEffect(() => {
+    modeRef.current = mode;
+    if (mode !== "jee" && mode !== "neet") {
+      setSubMode("general");
+      subModeRef.current = "general";
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    subModeRef.current = subMode;
+  }, [subMode]);
 
   // ── Session history ──
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const preloadedSessionsRef = useRef<TeachSession[]>([]);
   const [boardInstant, setBoardInstant] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const currentSessionIdRef = useRef<string | null>(null);
   const drainAbortRef = useRef(false);
   const drainPausedRef = useRef(false);
+  const guestAudioRef = useRef<HTMLAudioElement | null>(null);
+  const guestDemoStoppedRef = useRef(false);
   const drainInterruptRef = useRef<(() => void) | null>(null);
   const replaySnapshotRef = useRef<BoardElement[]>([]); // full element list before replay clears board
   const [isPaused, setIsPaused] = useState(false);
@@ -332,6 +410,40 @@ function TeachPage() {
 
   // ── Prompt quota ──
   const { user } = useAuth();
+  const { profile } = useProfile();
+  const isJeeUser = profile?.mode === "jee";
+
+  // Auto-default board mode to "jee" for JEE-onboarded users so they never see the picker
+  useEffect(() => {
+    if (isJeeUser && mode === null) setMode("jee");
+  }, [isJeeUser, mode]);
+
+  const [changeModeOpen, setChangeModeOpen] = useState(false);
+
+  // ── Device guard — register on Studio open, not after AI message ──
+  const [deviceBlocked, setDeviceBlocked] = useState(false);
+  const [ipBlocked, setIpBlocked] = useState(false);
+  const deviceRegisteredRef = useRef(false);
+  useEffect(() => {
+    if (!user?.uid || user.isAnonymous) return;
+    checkDeviceAllowed(user.uid).then(({ allowed }) => {
+      if (!allowed) {
+        setDeviceBlocked(true);
+      } else if (!deviceRegisteredRef.current) {
+        deviceRegisteredRef.current = true;
+        void registerDeviceUsage(user.uid);
+      }
+    });
+  }, [user?.uid]);
+
+  // Silently preload last 2 sessions on mount so history opens instantly
+  useEffect(() => {
+    if (!user?.uid) return;
+    listTeachSessionsPaged(user.uid, 2).then(({ sessions }) => {
+      preloadedSessionsRef.current = sessions;
+    });
+  }, [user?.uid]);
+
   const [promptCount, setPromptCount] = useState<number>(0);
   const [quotaLoaded, setQuotaLoaded] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -367,6 +479,21 @@ function TeachPage() {
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
+
+  // Auto-load earlier elements when user scrolls to top sentinel
+  useEffect(() => {
+    const sentinel = topSentinelRef.current;
+    if (!sentinel || visibleFrom === 0) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !loadingEarlierRef.current) {
+        loadingEarlierRef.current = true;
+        setVisibleFrom(prev => Math.max(0, prev - 20));
+        requestAnimationFrame(() => { loadingEarlierRef.current = false; });
+      }
+    }, { threshold: 0.1 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleFrom]);
 
   const drainNext = useCallback(() => {
     if (isRevealingRef.current) {
@@ -481,15 +608,38 @@ function TeachPage() {
       requestAttachments: UploadedAttachment[] = []
     ) => {
       const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
-
       try {
         const response = await fetch(workerUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages, attachments: requestAttachments, mode: modeRef.current ?? "jee" }),
+          body: JSON.stringify({
+            messages,
+            attachments: requestAttachments,
+            sessionStorageUrls: [...new Set([
+              ...elementsRef.current
+                .filter(el => el.type === "student_text")
+                .flatMap(el => (el.attachments ?? []).map((a: UploadedAttachment) => a.storageUrl).filter(Boolean)),
+              ...requestAttachments.map(a => a.storageUrl).filter(Boolean),
+            ])],
+            mode: modeRef.current ?? "jee",
+            subMode: subModeRef.current,
+            uid: user?.uid,
+          }),
         });
 
         if (!response.ok) {
+          if (response.status === 429) {
+            const data = await response.json().catch(() => ({})) as { error?: string };
+            if (data.error === "IP_LIMIT_REACHED") {
+              // Remove the student's question from board — it should vanish
+              setElements(prev => {
+                const last = prev.at(-1);
+                return last?.type === "student_text" ? prev.slice(0, -1) : prev;
+              });
+              setIpBlocked(true);
+              return false;
+            }
+          }
           throw new Error(`Worker returned status ${response.status}`);
         }
 
@@ -501,11 +651,7 @@ function TeachPage() {
         let accumulatedSseText = "";
         let aiTextBuffer = "";
         let rawModelText = "";
-        let sawAiQuestionInStream = false;
-        let sawAiQuestionElementLine = false;
-        let parsedAiQuestion = false;
         const processedElements = new Set<string>();
-        let lastElementType: string | null = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -519,11 +665,7 @@ function TeachPage() {
 
           for (const line of sseLines) {
             const trimmed = line.trim();
-            if (trimmed === "data: [DONE]") {
-              const elements = elementsRef.current;
-              console.log("stream done — last element:", elements.at(-1)?.type, elements.at(-1)?.id);
-              continue;
-            }
+            if (trimmed === "data: [DONE]") continue;
             if (!trimmed) continue;
 
             if (trimmed.startsWith("data: ")) {
@@ -531,13 +673,6 @@ function TeachPage() {
                 const sseData = JSON.parse(trimmed.slice(6));
                 const content = sseData.choices?.[0]?.delta?.content || "";
                 rawModelText += content;
-                if (content.includes("ai_question")) {
-                  console.log("AI stream contains ai_question delta:", content);
-                }
-                if (!sawAiQuestionInStream && rawModelText.includes("ai_question")) {
-                  sawAiQuestionInStream = true;
-                  console.log("AI stream contains ai_question in accumulated response");
-                }
                 aiTextBuffer += content;
               } catch {
                 // partial SSE — ignore
@@ -551,29 +686,14 @@ function TeachPage() {
           for (const aiLine of aiLines) {
             const elementTrimmed = aiLine.trim();
             if (elementTrimmed.startsWith("[ELEMENT]: ")) {
-              if (elementTrimmed.includes("ai_question")) {
-                sawAiQuestionElementLine = true;
-                console.log("Parser saw ai_question element line:", elementTrimmed);
-              }
               const jsonStr = elementTrimmed.slice(11).trim();
               if (!processedElements.has(jsonStr)) {
                 processedElements.add(jsonStr);
                 try {
                   const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
-                  if (parsed.type === "ai_question") {
-                    parsedAiQuestion = true;
-                    console.log("Parser parsed ai_question:", parsed);
-                  }
-                  const el: BoardElement = {
-                    ...parsed,
-                    id: nanoid(),
-                  } as BoardElement;
-
+                  const el: BoardElement = { ...parsed, id: nanoid() } as BoardElement;
                   pendingQueueRef.current.push(el);
                   void drainNext();
-                  lastElementType = parsed.type;
-
-                  console.log("element parsed:", el.type, el.id);
                 } catch (parseError) {
                   console.error("Failed to parse board element JSON:", jsonStr, parseError);
                 }
@@ -584,59 +704,18 @@ function TeachPage() {
 
         const finalElementLine = aiTextBuffer.trim();
         if (finalElementLine.startsWith("[ELEMENT]: ")) {
-          if (finalElementLine.includes("ai_question")) {
-            sawAiQuestionElementLine = true;
-            console.log("Parser saw ai_question element line:", finalElementLine);
-          }
-
           const jsonStr = finalElementLine.slice(11).trim();
           if (!processedElements.has(jsonStr)) {
             processedElements.add(jsonStr);
             try {
               const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
-              if (parsed.type === "ai_question") {
-                parsedAiQuestion = true;
-                console.log("Parser parsed ai_question:", parsed);
-              }
-
-              const el: BoardElement = {
-                ...parsed,
-                id: nanoid(),
-              } as BoardElement;
-
+              const el: BoardElement = { ...parsed, id: nanoid() } as BoardElement;
               pendingQueueRef.current.push(el);
               void drainNext();
-              lastElementType = parsed.type;
-
-              console.log("element parsed:", el.type, el.id);
             } catch (parseError) {
               console.error("Failed to parse final board element JSON:", jsonStr, parseError);
             }
           }
-        } else if (finalElementLine) {
-          console.log("Stream ended with non-element text left in parser buffer:", finalElementLine);
-        }
-
-        void lastElementType; // suppress unused warning
-        console.log("AI question trace summary:", {
-          sawAiQuestionInStream,
-          sawAiQuestionElementLine,
-          parsedAiQuestion,
-          responseLength: rawModelText.length,
-          lastElementType,
-          responseTail: rawModelText.slice(-500),
-        });
-        if (!sawAiQuestionInStream) {
-          console.log("AI response did not contain ai_question", {
-            responseLength: rawModelText.length,
-            lastElementType,
-          });
-        } else if (!sawAiQuestionElementLine) {
-          console.log("AI response contained ai_question, but parser did not see a complete element line", {
-            responseLength: rawModelText.length,
-          });
-        } else if (!parsedAiQuestion) {
-          console.log("Parser saw an ai_question line, but did not parse it as ai_question");
         }
         const finalDrain = drainNext();
         await finalDrain;
@@ -659,7 +738,15 @@ function TeachPage() {
     (els: BoardElement[]): { role: string; content: string }[] =>
       els.reduce<{ role: string; content: string }[]>((acc, el) => {
         if (el.type === "student_text") {
-          acc.push({ role: "user", content: el.content });
+          // Re-attach PDF text into history so the model retains context across turns
+          const attachmentText = (el.attachments ?? [])
+            .filter(a => a.kind === "pdf" && a.text)
+            .map(a => `[Attached PDF — ${a.name}]:\n${a.text}`)
+            .join("\n\n");
+          const imageCount = (el.attachments ?? []).filter(a => a.kind === "image").length;
+          const imageNote = imageCount > 0 ? `[${imageCount} image${imageCount > 1 ? "s" : ""} attached to this message]` : "";
+          const fullContent = [el.content, attachmentText, imageNote].filter(Boolean).join("\n\n");
+          acc.push({ role: "user", content: fullContent });
         } else {
           const last = acc[acc.length - 1];
           // Re-create the element for history representation without the speak field
@@ -707,6 +794,7 @@ function TeachPage() {
         return;
       }
 
+
       // Clear any prior error
       setErrorText(null);
 
@@ -722,6 +810,12 @@ function TeachPage() {
 
       const messageAttachments = attachments;
       const studentContent = text.trim();
+      // Increment lifetime quota only now — user actually sent the attachments
+      if (messageAttachments.length > 0 && user?.uid) {
+        for (const a of messageAttachments) {
+          void incrementAttachmentUsage(user.uid, a.kind);
+        }
+      }
 
       // Append student element immediately
       const studentEl: BoardElement = {
@@ -733,6 +827,7 @@ function TeachPage() {
       setElements((prev) => [...prev, studentEl]);
       setDockInput((prev) => ({ ...prev, text: "" }));
       setAttachments([]);
+      setPdfTruncationNotice(null);
       setAiState("thinking");
 
       // Build history including the newly added student element
@@ -741,21 +836,24 @@ function TeachPage() {
 
       const uid = user.uid;
       const isFirstMessage = elementsRef.current.length === 0;
-      const allStudentMessages = [...elementsRef.current, { type: "student_text", content: studentContent }]
-        .filter((el: any) => el.type === "student_text");
-      const meaningfulMsg = allStudentMessages.find((el: any) => el.content.trim().split(" ").length > 3);
-      const sessionTitle = (meaningfulMsg?.content ?? studentContent).slice(0, 80);
+      const allStudentMessages = [...elementsRef.current, { type: "student_text", content: studentContent } as BoardElement]
+        .filter((el) => el.type === "student_text");
+      const meaningfulMsg = allStudentMessages.find((el) => {
+        const item = el as any;
+        return item.content && item.content.trim().split(" ").length > 3;
+      }) as any;
+      const sessionTitle = ((meaningfulMsg?.content as string) || studentContent).slice(0, 80);
       void (async () => {
         const ok = await streamToBoard(messages, messageAttachments);
         if (!ok) return;
         try {
-          // Auto-save session after each successful AI response
+        // Auto-save session after each successful AI response
           const sessionId = currentSessionIdRef.current ?? nanoid();
           if (!currentSessionIdRef.current) {
             setCurrentSessionId(sessionId);
-            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee");
+            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
           } else {
-            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee");
+            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
           }
         } catch (e) {
           console.error("Failed to save session:", e);
@@ -766,6 +864,18 @@ function TeachPage() {
           const remainingAfter = TEACH_PROMPT_LIMIT - next;
           if (next >= TEACH_PROMPT_LIMIT) {
             setFeedbackOpen(true);
+            // Delete R2 attachments — free user exhausted prompts, files no longer needed
+            const sessionStorageUrls = elementsRef.current
+              .filter(el => el.type === "student_text")
+              .flatMap(el => (el.attachments ?? []).map((a: UploadedAttachment) => a.storageUrl).filter(Boolean)) as string[];
+            if (sessionStorageUrls.length > 0) {
+              // Delete from Firebase Storage
+              sessionStorageUrls.forEach(url => {
+                const path = decodeURIComponent(url.split("/o/")[1]?.split("?")[0] ?? "");
+                if (path) deleteObject(storageRef(storage, path)).catch(() => {});
+              });
+              setFilesRemovedNotice(true);
+            }
           } else if (remainingAfter === 2 || remainingAfter === 1) {
             toast.warning(
               `${remainingAfter} free prompt${remainingAfter === 1 ? "" : "s"} left`,
@@ -830,8 +940,13 @@ function TeachPage() {
       setAiState("speaking");
       await drainNext();
       setAiState("idle");
+      const uid = user?.uid;
+      const sessionId = currentSessionIdRef.current;
+      if (uid && sessionId) {
+        void updateTeachSessionElements(uid, sessionId, elementsRef.current);
+      }
     })();
-  }, [drainNext]);
+  }, [drainNext, user?.uid]);
 
   const handleResume = useCallback(async () => {
     const snapshot = replaySnapshotRef.current;
@@ -886,14 +1001,21 @@ function TeachPage() {
     drainAbortRef.current = true;
     drainPausedRef.current = false;
     stopCurrentSpeech();
+    if (guestAudioRef.current) {
+      guestAudioRef.current.pause();
+      guestAudioRef.current.src = "";
+      guestAudioRef.current = null;
+    }
     pendingQueueRef.current = [];
     replaySnapshotRef.current = [];
     setElements([]);
+    setVisibleFrom(0);
     setCurrentSessionId(null);
     setIsReplaying(false);
     setIsPaused(false);
     setReplayMode(false);
-    setMode(null);
+    setMode(null);       // auto-default effect will re-set to "jee" for JEE users
+    setChangeModeOpen(false);
     setErrorText(null);
     setCheckpointElementId(null);
     setAttachments([]);
@@ -905,9 +1027,16 @@ function TeachPage() {
     stopCurrentSpeech();
     pendingQueueRef.current = [];
     stopAllTypewriters();
-    setElements(session.elements ?? []);
+    replaySnapshotRef.current = [];
+    const newElements = session.elements ?? [];
+    elementsRef.current = newElements;
+    setElements(newElements);
+    setVisibleFrom(Math.max(0, newElements.length - 35));
     setCurrentSessionId(session.id);
     setMode((session.mode as any) ?? "jee");
+    const restoredSubMode = (session.subMode as SubMode) ?? "general";
+    setSubMode(restoredSubMode);
+    subModeRef.current = restoredSubMode;
     setErrorText(null);
     setCheckpointElementId(null);
     toast.success(`Loaded: "${session.title}"`);
@@ -959,26 +1088,73 @@ function TeachPage() {
       setDockInput((prev) => ({ ...prev, isRecording: !prev.isRecording }));
     },
     onUploadFile: async (file) => {
+      const isImage = file.type.startsWith("image/");
+      const isPdf = file.type === "application/pdf";
+      if (!isImage && !isPdf) { toast.error("Only images and PDFs are supported."); return; }
+
+      const uid = user?.uid;
+      if (!uid) return;
+
+      const kind: UploadedAttachmentKind = isImage ? "image" : "pdf";
+
+      // Check lifetime quota
+      const usage = await getAttachmentUsage(uid);
+      const pendingPdfs = attachments.filter(a => a.kind === "pdf").length;
+      const pendingImages = attachments.filter(a => a.kind === "image").length;
+      if (isPdf && usage.pdfUploadsUsed + pendingPdfs >= FREE_PDF_LIMIT) { toast.error("Free plan: 1 PDF lifetime limit reached."); return; }
+      if (isImage && usage.imageUploadsUsed + pendingImages >= FREE_IMAGE_LIMIT) { toast.error("Free plan: 2 image lifetime limit reached."); return; }
+      if (isPdf && file.size > PDF_MAX_BYTES) { toast.error("PDF must be under 15MB."); return; }
+
+      setIsAttachmentUploading(true);
       try {
-        const kind = getAttachmentKind(file);
-        const baseAttachment = {
-          id: nanoid(),
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-          kind,
-        };
+        const attachmentId = nanoid();
+        const base = { id: attachmentId, name: file.name, mimeType: file.type || "application/octet-stream", size: file.size, kind };
 
-        const attachment: UploadedAttachment =
-          kind === "text"
-            ? { ...baseAttachment, text: await readFileAsText(file) }
-            : { ...baseAttachment, dataUrl: await readFileAsDataUrl(file) };
+        // Process file: extract text (PDF) + render to image for R2
+        let imageBase64: string;
+        let text: string | undefined;
+        let totalPages = 1;
 
-        setAttachments((prev) => [...prev, attachment]);
-        console.log("File uploaded:", file.name, file.type, file.size);
+        if (isPdf) {
+          const result = await extractPdfContent(file, 2);
+          text = result.text;
+          totalPages = result.totalPages;
+          // Stitch PDF pages into one tall image for R2
+          const pages = result.pageImages;
+          if (pages.length > 1) {
+            const imgs = await Promise.all(pages.map(src => new Promise<HTMLImageElement>((res, rej) => {
+              const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = src;
+            })));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(...imgs.map(i => i.width));
+            canvas.height = imgs.reduce((h, i) => h + i.height, 0);
+            const ctx = canvas.getContext("2d")!;
+            let y = 0;
+            for (const img of imgs) { ctx.drawImage(img, 0, y); y += img.height; }
+            imageBase64 = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+          } else {
+            imageBase64 = pages[0]?.split(",")[1] ?? "";
+          }
+          if (totalPages > 2) setPdfTruncationNotice(`PDF has ${totalPages} pages — only the first 2 were read on free plan.`);
+        } else {
+          const dataUrl = await readFileAsDataUrl(file);
+          imageBase64 = dataUrl.split(",")[1];
+        }
+
+        // Upload to Firebase Storage
+        const mimeType = isPdf ? "image/jpeg" : (file.type || "image/jpeg");
+        const binary = atob(imageBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const fileRef = storageRef(storage, `attachments/${uid}/${attachmentId}`);
+        await uploadBytes(fileRef, bytes, { contentType: mimeType });
+        const storageUrl = await getDownloadURL(fileRef);
+        setAttachments(prev => [...prev, { ...base, storageUrl, ...(text ? { text } : {}) }]);
       } catch (err) {
-        console.error("Failed to read uploaded file:", file.name, err);
-        setErrorText(`Could not read ${file.name}`);
+        console.error("Failed to upload file:", file.name, err);
+        toast.error(`Could not upload ${file.name}`);
+      } finally {
+        setIsAttachmentUploading(false);
       }
     },
     onRemoveAttachment: (id) => {
@@ -986,17 +1162,151 @@ function TeachPage() {
     },
   };
 
+  // ── Guest demo handler ────────────────────────────────────────────────────
+  const isGuest = user?.isAnonymous === true;
+  const isPortraitMobile = useIsPortraitMobile();
+
+  const handleGuestDemo = useCallback(() => {
+    // Stop any previous audio immediately
+    if (guestAudioRef.current) {
+      guestAudioRef.current.pause();
+      guestAudioRef.current.src = "";
+      guestAudioRef.current = null;
+    }
+    drainAbortRef.current = false;
+    guestDemoStoppedRef.current = false;
+    setErrorText(null);
+    setTtsEnabled(false);
+    pendingQueueRef.current = [];
+    setAiState("thinking");
+    void (async () => {
+      await new Promise(r => setTimeout(r, 800));
+      setAiState("speaking");
+      for (let i = 0; i < DEMO_ELEMENTS.length; i++) {
+        if (guestDemoStoppedRef.current) break;
+        const url = `/demo-audio/${String(i + 1).padStart(2, "0")}.mp3`;
+        const audio = new Audio(url);
+        guestAudioRef.current = audio;
+        const audioPromise = new Promise<void>(resolve => {
+          audio.onended = () => resolve();
+          audio.onerror = () => resolve();
+          audio.play().catch(() => resolve());
+        });
+        pendingQueueRef.current = [{ ...DEMO_ELEMENTS[i], id: nanoid() } as BoardElement];
+        await Promise.all([audioPromise, drainNext()]);
+      }
+      guestAudioRef.current = null;
+      setAiState("idle");
+    })();
+  }, [drainNext]);
+
   // ── Dock disabled conditions ──────────────────────────────────────────────
-  const dockDisabled = aiState === "thinking" || isBlocked || mode === null;
-  const dockPlaceholder = isBlocked
-    ? "Prompt limit reached — thanks for trying Matrix"
-    : checkpointElementId !== null
-      ? "Answer, ask a follow-up, or steer the lesson..."
-      : undefined;
+  const dockDisabled = isGuest || aiState === "thinking" || isBlocked || mode === null || deviceBlocked || ipBlocked || isAttachmentUploading;
+  const dockPlaceholder = isGuest
+    ? "Sign up free to ask anything →"
+    : isBlocked
+      ? "Prompt limit reached — thanks for trying Matrix"
+      : checkpointElementId !== null
+        ? "Answer, ask a follow-up, or steer the lesson..."
+        : undefined;
 
   return (
+    <>
+    {isPortraitMobile && (
+      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
+        <div className="relative">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" className="animate-bounce">
+            <rect x="16" y="8" width="32" height="48" rx="5" className="fill-muted stroke-border" strokeWidth="2"/>
+            <circle cx="32" cy="49" r="2.5" className="fill-muted-foreground/40"/>
+            <path d="M42 28 L52 32 L42 36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"/>
+            <path d="M12 28 L52 32" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-indigo-500"/>
+          </svg>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xl font-bold tracking-tight">Rotate your phone</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            The AI teaching board is designed for landscape. Turn your phone sideways for the best experience.
+          </p>
+        </div>
+      </div>
+    )}
     <div className="relative -mx-2 pb-28">
+      {/* ── Files removed notice banner ── */}
+      <AnimatePresence>
+        {filesRemovedNotice && (
+          <motion.div
+            key="files-removed"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="absolute top-3 left-1/2 z-50 -translate-x-1/2 w-max max-w-[calc(100vw-2rem)]"
+          >
+            <div className="flex items-center gap-3 rounded-xl px-4 py-2.5 shadow-xl"
+              style={{
+                background: boardConfig.mode === "blackboard" ? "rgba(15,15,25,0.88)" : "rgba(240,240,255,0.95)",
+                border: boardConfig.mode === "blackboard" ? "1px solid rgba(99,102,241,0.35)" : "1px solid rgba(99,102,241,0.4)",
+                backdropFilter: "blur(16px)",
+              }}
+            >
+              <FileWarning className="h-4 w-4 shrink-0 text-indigo-400" />
+              <p className={`text-xs font-medium leading-snug ${boardConfig.mode === "blackboard" ? "text-indigo-200" : "text-indigo-800"}`}>
+                Your uploaded files have been removed — upgrade to keep files across sessions.
+              </p>
+              <button onClick={() => setFilesRemovedNotice(false)}
+                className={`ml-1 rounded p-0.5 transition-colors ${boardConfig.mode === "blackboard" ? "text-indigo-400/60 hover:text-indigo-300" : "text-indigo-600/60 hover:text-indigo-700"}`}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* ── TEMP: dev reset ── */}
+      {user?.uid && (
+        <button onClick={async () => { await resetTeachPromptCount(user.uid!); setPromptCount(0); promptCountRef.current = 0; setFeedbackOpen(false); toast.success("Prompts reset!"); }}
+          className="absolute top-2 right-2 z-50 rounded bg-red-600/80 px-2 py-1 text-[10px] font-bold text-white">
+          [DEV] Reset
+        </button>
+      )}
+      {/* ── PDF truncation notice banner ── */}
+      <AnimatePresence>
+        {pdfTruncationNotice && (
+          <motion.div
+            key="pdf-notice"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="absolute top-3 left-1/2 z-50 -translate-x-1/2 w-max max-w-[calc(100vw-2rem)]"
+          >
+            <div
+              className="flex items-center gap-3 rounded-xl px-4 py-2.5 shadow-xl"
+              style={{
+                background: boardConfig.mode === "blackboard"
+                  ? "rgba(30,20,0,0.82)"
+                  : "rgba(255,251,235,0.92)",
+                border: boardConfig.mode === "blackboard"
+                  ? "1px solid rgba(245,158,11,0.35)"
+                  : "1px solid rgba(217,119,6,0.4)",
+                backdropFilter: "blur(16px)",
+              }}
+            >
+              <FileWarning className="h-4 w-4 shrink-0 text-amber-400" />
+              <p className={`text-xs font-medium leading-snug ${boardConfig.mode === "blackboard" ? "text-amber-200" : "text-amber-800"}`}>
+                {pdfTruncationNotice}
+              </p>
+              <button
+                onClick={() => setPdfTruncationNotice(null)}
+                className={`ml-1 rounded p-0.5 transition-colors ${boardConfig.mode === "blackboard" ? "text-amber-400/60 hover:text-amber-300" : "text-amber-600/60 hover:text-amber-700"}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* ── Teaching Smartboard ── */}
+      <ErrorBoundary>
       <TeachBoard
         config={boardConfig}
         aiState={aiState}
@@ -1004,8 +1314,12 @@ function TeachPage() {
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
         ttsEnabled={ttsEnabled}
-        modeBadge={mode ? `${getModeConfig(mode).name} · ${getModeConfig(mode).persona}` : undefined}
-        onOpenHistory={() => setHistoryOpen(true)}
+        modeBadge={mode ? `${getModeConfig(mode).name}${subMode === "3d" ? " · 3D Beta" : ` · ${getModeConfig(mode).persona}`}` : undefined}
+        isGuest={isGuest}
+        onOpenHistory={isGuest
+          ? (aiState === "idle" && elements.length > 0 ? handleGuestDemo : undefined)
+          : () => setHistoryOpen(true)
+        }
         onNewSession={handleNewSession}
         onReplay={elements.length > 0 && !isReplaying ? handleReplay : undefined}
         onStopReplay={isReplaying ? handleStopReplay : undefined}
@@ -1026,40 +1340,94 @@ function TeachPage() {
           });
         }}
       >
-        {elements.length === 0 && mode === null ? (
-          <ModeSelector
-            onSelect={setMode}
-            isBlackboard={boardConfig.mode === "blackboard"}
-          />
+        {deviceBlocked ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+            <p className="text-lg font-semibold opacity-60">Free trial unavailable on this device</p>
+            <p className="text-sm opacity-35 max-w-xs">This device has already been used with multiple free accounts. Upgrade to continue.</p>
+          </div>
+        ) : ipBlocked ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+            <p className="text-lg font-semibold opacity-60">Free trial limit reached</p>
+            <p className="text-sm opacity-35 max-w-xs">2 free accounts have already used AI from your network. Upgrade to continue learning.</p>
+          </div>
+        ) : elements.length === 0 && mode === null ? (
+          isGuest ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <p className="text-sm font-light opacity-40">See how the AI teaches on the board</p>
+              <button
+                onClick={() => { setMode("jee"); setTimeout(handleGuestDemo, 50); }}
+                className="flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-5 py-2 text-sm font-semibold text-foreground/70 transition-all hover:border-border hover:bg-muted/70 hover:scale-105"
+              >
+                <Sparkles className="h-4 w-4" />
+                Watch Demo
+              </button>
+              <p className="text-xs opacity-30">Sign up free to ask your own questions</p>
+            </div>
+          ) : (
+            <ModeSelector
+              onSelect={setMode}
+              isBlackboard={boardConfig.mode === "blackboard"}
+            />
+          )
         ) : elements.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <p className="text-sm font-light opacity-35">
-              {getModeConfig(mode!).persona} is ready — ask anything
-            </p>
-            <button
-              onClick={() => setMode(null)}
-              className="text-xs opacity-40 hover:opacity-70 transition-opacity underline underline-offset-2"
-            >
-              Change mode
-            </button>
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            {!isGuest && (
+              changeModeOpen ? (
+                <ModeSelector
+                  onSelect={(m) => { setMode(m); setChangeModeOpen(false); }}
+                  isBlackboard={boardConfig.mode === "blackboard"}
+                  restrictedModes={isJeeUser ? ["jee", "general", "coding"] : undefined}
+                />
+              ) : (
+                <>
+                  <p className="text-sm font-light opacity-35">
+                    {getModeConfig(mode!).persona} is ready — ask anything
+                  </p>
+                  <button
+                    onClick={() => isJeeUser ? setChangeModeOpen(true) : setMode(null)}
+                    className="text-xs opacity-40 hover:opacity-70 transition-opacity underline underline-offset-2"
+                  >
+                    Change mode
+                  </button>
+                </>
+              )
+            )}
           </div>
         ) : (
           <div className="w-full">
-            <BoardRenderer
-              elements={elements}
-              boardMode={boardConfig.mode}
-              checkpointElementId={checkpointElementId}
-              onCheckpointAnswer={handleCheckpointAnswer}
-              optionAnswers={optionAnswers}
-              onOptionSelect={handleOptionSelect}
-              instant={boardInstant}
-            />
+            {/* Sentinel — IntersectionObserver loads earlier elements when user scrolls here */}
+            {visibleFrom > 0 && <div ref={topSentinelRef} className="h-1 w-full" />}
+            <ErrorBoundary>
+              <BoardRenderer
+                elements={elements.slice(visibleFrom)}
+                boardMode={boardConfig.mode}
+                checkpointElementId={checkpointElementId}
+                onCheckpointAnswer={handleCheckpointAnswer}
+                optionAnswers={optionAnswers}
+                onOptionSelect={handleOptionSelect}
+                instant={boardInstant}
+              />
+            </ErrorBoundary>
           </div>
         )}
       </TeachBoard>
+      </ErrorBoundary>
+
+      {/* ── Guest demo completion CTA — below the board ── */}
+      {isGuest && elements.length > 0 && aiState === "idle" && (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <p className="text-xs text-muted-foreground">5 free prompts · No credit card</p>
+          <button
+            onClick={() => window.location.assign("/")}
+            className="rounded-full bg-foreground px-5 py-2 text-sm font-semibold text-background transition-opacity hover:opacity-80"
+          >
+            Create Free Account
+          </button>
+        </div>
+      )}
 
       {/* ── Session controls toolbar (below the board) ── */}
-      {(elements.length > 0 || isReplaying || isPaused || (replaySnapshotRef.current.length > 0 && elements.length < replaySnapshotRef.current.length)) && (
+      {!isGuest && (elements.length > 0 || isReplaying || isPaused || (replaySnapshotRef.current.length > 0 && elements.length < replaySnapshotRef.current.length)) && (
         <div className="flex items-center justify-end gap-2 mt-3 px-1">
           {/* Live pause / resume */}
           {!isReplaying && aiState === "speaking" && !isPaused && (
@@ -1100,31 +1468,113 @@ function TeachPage() {
       )}
 
       {/* ── Bottom Dock ── */}
-      <BottomDock
-        inputState={dockInput}
-        actions={actions}
-        attachments={attachments}
-        onInputChange={(text) => setDockInput((prev) => ({ ...prev, text }))}
-        disabled={dockDisabled}
-        placeholder={dockPlaceholder}
-      />
-
-      {user?.uid && (
-        <SessionHistory
-          open={historyOpen}
-          onClose={() => setHistoryOpen(false)}
-          uid={user.uid}
-          currentSessionId={currentSessionId}
-          onLoadSession={handleLoadSession}
+      {isGuest ? (
+        (aiState === "thinking" || aiState === "speaking") ? (
+          // Demo playing — show stop button
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+            <button
+              onClick={() => {
+                guestDemoStoppedRef.current = true;
+                if (guestAudioRef.current) {
+                  guestAudioRef.current.pause();
+                  guestAudioRef.current.dispatchEvent(new Event("ended"));
+                  guestAudioRef.current = null;
+                }
+                pendingQueueRef.current = [];
+              }}
+              className="flex items-center gap-2 rounded-full border border-border/60 bg-card/90 backdrop-blur-xl px-5 py-2.5 text-sm font-medium text-muted-foreground shadow-xl transition-colors hover:text-foreground"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+              Stop
+            </button>
+          </div>
+        ) : null
+      ) : (
+        <BottomDock
+          inputState={dockInput}
+          actions={actions}
+          attachments={attachments}
+          onInputChange={(text) => setDockInput((prev) => ({ ...prev, text }))}
+          disabled={dockDisabled}
+          placeholder={dockPlaceholder}
+          isAttachmentUploading={isAttachmentUploading}
+          subMode={subMode}
+          showSubMode={mode === "jee" || mode === "neet"}
+          onSubModeChange={(m) => {
+            if (m === subMode) return;
+            if (elements.length > 0) {
+              setPendingSubMode(m); // show confirmation dialog
+            } else {
+              setSubMode(m);
+            }
+          }}
         />
       )}
 
-      <FeedbackDialog
-        open={feedbackOpen}
-        onOpenChange={setFeedbackOpen}
-        uid={user?.uid ?? null}
-        promptCount={promptCount}
-      />
+      {user?.uid && (
+        <Suspense>
+          <SessionHistory
+            open={historyOpen}
+            onClose={() => setHistoryOpen(false)}
+            uid={user.uid}
+            currentSessionId={currentSessionId}
+            onLoadSession={handleLoadSession}
+            preloadedSessions={preloadedSessionsRef.current}
+          />
+        </Suspense>
+      )}
+
+      {/* Hidden trigger for AppNav upgrade button */}
+      <button id="studio-upgrade-trigger" className="hidden" onClick={() => setFeedbackOpen(true)} />
+
+      <Suspense>
+        <UpgradeDialog
+          open={feedbackOpen}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      </Suspense>
+
+      {/* Sub-mode switch confirmation dialog */}
+      <AlertDialog open={!!pendingSubMode} onOpenChange={(o) => { if (!o) setPendingSubMode(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch to {pendingSubMode === "3d" ? "3D Visualization" : "General"} mode?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current session will be saved to history. A new session will open in {pendingSubMode === "3d" ? "3D Visualization" : "General"} mode.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingSubMode(null)}>Keep current</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              if (pendingSubMode) {
+                const nextSubMode = pendingSubMode;
+                const keepMode = mode; // preserve current main mode
+                setSubMode(nextSubMode);
+                setPendingSubMode(null);
+                // Reset session without resetting main mode
+                drainInterruptRef.current?.();
+                drainAbortRef.current = true;
+                drainPausedRef.current = false;
+                stopCurrentSpeech();
+                pendingQueueRef.current = [];
+                replaySnapshotRef.current = [];
+                setElements([]);
+                setVisibleFrom(0);
+                setCurrentSessionId(null);
+                setIsReplaying(false);
+                setIsPaused(false);
+                setReplayMode(false);
+                setErrorText(null);
+                setCheckpointElementId(null);
+                setMode(keepMode); // keep the same main mode
+              }
+            }}>
+              Open new session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+    </>
   );
 }

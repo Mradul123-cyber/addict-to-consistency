@@ -34,6 +34,19 @@
 	 *   AICREDITS_API_KEY
 	 */
 	/**
+	 * KV Namespaces — IP account limit tracking
+	 */
+	"kv_namespaces": [
+		{ "binding": "IP_ACCOUNTS", "id": "af82a104f7c244f79fa18c5d165a02ed" }
+	],
+	/**
+	 * R2 Buckets — attachment storage (images + PDF renders, 30-day lifecycle)
+	 * Uncomment when R2 is enabled on Cloudflare account
+	 */
+	// "r2_buckets": [
+	// 	{ "binding": "ATTACHMENTS", "bucket_name": "matrix-attachments" }
+	// ],
+	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */

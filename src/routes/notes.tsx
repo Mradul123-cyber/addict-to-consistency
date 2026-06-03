@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import MatrixApp from "@/components/matrix/MatrixApp";
 import { NotesProvider } from "@/contexts/NotesContext";
 import { CommunityNotesView } from "@/components/community-notes/CommunityNotesView";
@@ -10,7 +10,7 @@ import { BookOpen, Users, ArrowLeft, ShieldCheck, Flame } from "lucide-react";
 export const Route = createFileRoute("/notes")({
   head: () => ({
     meta: [
-      { title: "Notes — JEE Console" },
+      { title: "Notes — Matrix" },
       { name: "description", content: "Matrix Notes and Community Notes for JEE preparation." },
     ],
   }),
@@ -30,10 +30,30 @@ const fadeUp = {
 function NotesRoute() {
   const [view, setView] = useState<View>("landing");
 
+  useEffect(() => {
+    if (view !== "matrix") return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setView("landing");
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [view]);
+
   if (view === "matrix") {
     return (
       <NotesProvider>
         <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 pt-8 pb-0">
+            <div className="mx-auto max-w-6xl px-5 md:px-8">
+              <button
+                onClick={() => setView("landing")}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Notes
+              </button>
+            </div>
+          </div>
           <div className="matrix-notes flex min-h-0 flex-1 flex-col">
             <MatrixApp />
           </div>

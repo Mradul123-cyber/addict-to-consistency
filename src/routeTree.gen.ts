@@ -10,10 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TracksRouteImport } from './routes/tracks'
+import { Route as TeachTestRouteImport } from './routes/teach-test'
 import { Route as TeachRouteImport } from './routes/teach'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ProblemsRouteImport } from './routes/problems'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NotesRouteImport } from './routes/notes'
+import { Route as NavTestRouteImport } from './routes/nav-test'
 import { Route as MatrixRouteImport } from './routes/matrix'
 import { Route as LogRouteImport } from './routes/log'
 import { Route as FocusRouteImport } from './routes/focus'
@@ -25,10 +28,16 @@ import { Route as TestResultsTestIdRouteImport } from './routes/test-results.$te
 import { Route as PracticeSessionIdRouteImport } from './routes/practice.$sessionId'
 import { Route as AdminUploadRouteImport } from './routes/admin/upload'
 import { Route as AdminReviewJobIdRouteImport } from './routes/admin/review.$jobId'
+import { Route as AdminReviewRouteImport } from './routes/admin/review.'
 
 const TracksRoute = TracksRouteImport.update({
   id: '/tracks',
   path: '/tracks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeachTestRoute = TeachTestRouteImport.update({
+  id: '/teach-test',
+  path: '/teach-test',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TeachRoute = TeachRouteImport.update({
@@ -46,9 +55,19 @@ const ProblemsRoute = ProblemsRouteImport.update({
   path: '/problems',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotesRoute = NotesRouteImport.update({
   id: '/notes',
   path: '/notes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NavTestRoute = NavTestRouteImport.update({
+  id: '/nav-test',
+  path: '/nav-test',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatrixRoute = MatrixRouteImport.update({
@@ -106,6 +125,11 @@ const AdminReviewJobIdRoute = AdminReviewJobIdRouteImport.update({
   path: '/admin/review/$jobId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminReviewRoute = AdminReviewRouteImport.update({
+  id: '/admin/review/',
+  path: '/admin/review/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -114,15 +138,19 @@ export interface FileRoutesByFullPath {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/nav-test': typeof NavTestRoute
   '/notes': typeof NotesRoute
+  '/privacy': typeof PrivacyRoute
   '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
+  '/teach-test': typeof TeachTestRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
   '/practice/$sessionId': typeof PracticeSessionIdRoute
   '/test-results/$testId': typeof TestResultsTestIdRoute
   '/test/$testId': typeof TestTestIdRoute
+  '/admin/review/': typeof AdminReviewRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesByTo {
@@ -132,15 +160,19 @@ export interface FileRoutesByTo {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/nav-test': typeof NavTestRoute
   '/notes': typeof NotesRoute
+  '/privacy': typeof PrivacyRoute
   '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
+  '/teach-test': typeof TeachTestRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
   '/practice/$sessionId': typeof PracticeSessionIdRoute
   '/test-results/$testId': typeof TestResultsTestIdRoute
   '/test/$testId': typeof TestTestIdRoute
+  '/admin/review': typeof AdminReviewRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRoutesById {
@@ -151,15 +183,19 @@ export interface FileRoutesById {
   '/focus': typeof FocusRoute
   '/log': typeof LogRoute
   '/matrix': typeof MatrixRoute
+  '/nav-test': typeof NavTestRoute
   '/notes': typeof NotesRoute
+  '/privacy': typeof PrivacyRoute
   '/problems': typeof ProblemsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/teach': typeof TeachRoute
+  '/teach-test': typeof TeachTestRoute
   '/tracks': typeof TracksRoute
   '/admin/upload': typeof AdminUploadRoute
   '/practice/$sessionId': typeof PracticeSessionIdRoute
   '/test-results/$testId': typeof TestResultsTestIdRoute
   '/test/$testId': typeof TestTestIdRoute
+  '/admin/review/': typeof AdminReviewRoute
   '/admin/review/$jobId': typeof AdminReviewJobIdRoute
 }
 export interface FileRouteTypes {
@@ -171,15 +207,19 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/nav-test'
     | '/notes'
+    | '/privacy'
     | '/problems'
     | '/sitemap.xml'
     | '/teach'
+    | '/teach-test'
     | '/tracks'
     | '/admin/upload'
     | '/practice/$sessionId'
     | '/test-results/$testId'
     | '/test/$testId'
+    | '/admin/review/'
     | '/admin/review/$jobId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -189,15 +229,19 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/nav-test'
     | '/notes'
+    | '/privacy'
     | '/problems'
     | '/sitemap.xml'
     | '/teach'
+    | '/teach-test'
     | '/tracks'
     | '/admin/upload'
     | '/practice/$sessionId'
     | '/test-results/$testId'
     | '/test/$testId'
+    | '/admin/review'
     | '/admin/review/$jobId'
   id:
     | '__root__'
@@ -207,15 +251,19 @@ export interface FileRouteTypes {
     | '/focus'
     | '/log'
     | '/matrix'
+    | '/nav-test'
     | '/notes'
+    | '/privacy'
     | '/problems'
     | '/sitemap.xml'
     | '/teach'
+    | '/teach-test'
     | '/tracks'
     | '/admin/upload'
     | '/practice/$sessionId'
     | '/test-results/$testId'
     | '/test/$testId'
+    | '/admin/review/'
     | '/admin/review/$jobId'
   fileRoutesById: FileRoutesById
 }
@@ -226,15 +274,19 @@ export interface RootRouteChildren {
   FocusRoute: typeof FocusRoute
   LogRoute: typeof LogRoute
   MatrixRoute: typeof MatrixRoute
+  NavTestRoute: typeof NavTestRoute
   NotesRoute: typeof NotesRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProblemsRoute: typeof ProblemsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TeachRoute: typeof TeachRoute
+  TeachTestRoute: typeof TeachTestRoute
   TracksRoute: typeof TracksRoute
   AdminUploadRoute: typeof AdminUploadRoute
   PracticeSessionIdRoute: typeof PracticeSessionIdRoute
   TestResultsTestIdRoute: typeof TestResultsTestIdRoute
   TestTestIdRoute: typeof TestTestIdRoute
+  AdminReviewRoute: typeof AdminReviewRoute
   AdminReviewJobIdRoute: typeof AdminReviewJobIdRoute
 }
 
@@ -245,6 +297,13 @@ declare module '@tanstack/react-router' {
       path: '/tracks'
       fullPath: '/tracks'
       preLoaderRoute: typeof TracksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teach-test': {
+      id: '/teach-test'
+      path: '/teach-test'
+      fullPath: '/teach-test'
+      preLoaderRoute: typeof TeachTestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/teach': {
@@ -268,11 +327,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProblemsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notes': {
       id: '/notes'
       path: '/notes'
       fullPath: '/notes'
       preLoaderRoute: typeof NotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nav-test': {
+      id: '/nav-test'
+      path: '/nav-test'
+      fullPath: '/nav-test'
+      preLoaderRoute: typeof NavTestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/matrix': {
@@ -352,6 +425,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReviewJobIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/review/': {
+      id: '/admin/review/'
+      path: '/admin/review'
+      fullPath: '/admin/review/'
+      preLoaderRoute: typeof AdminReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -362,15 +442,19 @@ const rootRouteChildren: RootRouteChildren = {
   FocusRoute: FocusRoute,
   LogRoute: LogRoute,
   MatrixRoute: MatrixRoute,
+  NavTestRoute: NavTestRoute,
   NotesRoute: NotesRoute,
+  PrivacyRoute: PrivacyRoute,
   ProblemsRoute: ProblemsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TeachRoute: TeachRoute,
+  TeachTestRoute: TeachTestRoute,
   TracksRoute: TracksRoute,
   AdminUploadRoute: AdminUploadRoute,
   PracticeSessionIdRoute: PracticeSessionIdRoute,
   TestResultsTestIdRoute: TestResultsTestIdRoute,
   TestTestIdRoute: TestTestIdRoute,
+  AdminReviewRoute: AdminReviewRoute,
   AdminReviewJobIdRoute: AdminReviewJobIdRoute,
 }
 export const routeTree = rootRouteImport

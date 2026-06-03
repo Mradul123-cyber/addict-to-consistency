@@ -16,7 +16,7 @@ import { AlertCircle, ShieldAlert } from "lucide-react";
 export const Route = createFileRoute("/admin/upload")({
   head: () => ({
     meta: [
-      { title: "Admin Upload — JEE Console" },
+      { title: "Admin Upload — Matrix" },
       { name: "description", content: "Admin interface for uploading and managing JEE content" },
       { name: "robots", content: "noindex, nofollow" }, // Don't index admin pages
     ],

@@ -22,7 +22,7 @@ export const Route = createFileRoute("/focus")({
   }),
   head: () => ({
     meta: [
-      { title: "Focus Timer — JEE Console" },
+      { title: "Focus Timer — Matrix" },
       { name: "description", content: "Run a deep focus session with ambient audio, tab-drift alerts, and a built-in urge surfer to break distraction cravings." },
       { property: "og:title", content: "Deep Focus Timer for JEE Prep" },
       { property: "og:description", content: "Run a deep focus session with ambient audio, tab-drift alerts, and a built-in urge surfer to break distraction cravings." },
@@ -37,7 +37,20 @@ function FocusPage() {
   const navigate = useNavigate();
   const { subject } = Route.useSearch();
   const { tracks } = useStore();
-  const selectedTrack = tracks.find((t) => t.name === subject);
+  const selectedTrack = useMemo(() => {
+    if (subject === "Chemistry") {
+      const chemTracks = tracks.filter((t) => t.name.includes("Chemistry"));
+      return {
+        id: "chemistry-combined",
+        name: "Chemistry",
+        chapters: chemTracks.flatMap((t) => t.chapters),
+      };
+    }
+    if (subject === "Maths" || subject === "Mathematics") {
+      return tracks.find((t) => t.name === "Mathematics" || t.name === "Maths");
+    }
+    return tracks.find((t) => t.name === subject);
+  }, [subject, tracks]);
   const [showPanel, setShowPanel] = useState(!!selectedTrack);
   const [panelClosing, setPanelClosing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -63,6 +76,30 @@ function FocusPage() {
 
   const showSidePanel = (showPanel || panelClosing) && selectedTrack;
 
+  // Chapter list — used as inline panel on mobile via chapterPanel prop,
+  // and as side panel on desktop
+  const chapterList = showSidePanel ? (
+    <div className="space-y-1">
+      <p className="text-xs font-semibold text-muted-foreground pb-1">{selectedTrack.name}</p>
+      {selectedTrack.chapters.map((c) => {
+        const color = colorFromId(c.id);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-foreground/80 transition-all duration-150 hover:-translate-y-0.5"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${color}18`; e.currentTarget.style.color = color; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = ""; }}
+            onClick={() => handleChapterSelect(c.id)}
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full transition-transform duration-150 group-hover:scale-125" style={{ backgroundColor: color }} />
+            <span className="truncate">{c.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   return (
     <div className={showSidePanel ? "flex gap-6" : "mx-auto max-w-2xl"}>
       <div className={showSidePanel ? "min-w-0 flex-1 space-y-6" : "space-y-6"}>
@@ -72,44 +109,28 @@ function FocusPage() {
             Pick a task, choose a duration, then disappear into the work.
           </p>
         </div>
-        <FocusTimer key={selectedChapterId} initialChapterId={selectedChapterId} />
+        <FocusTimer
+          key={selectedChapterId}
+          initialChapterId={selectedChapterId}
+          onSubjectSelect={(subjectName) => {
+            navigate({ to: "/focus", search: { subject: subjectName }, replace: true });
+          }}
+          chapterPanel={
+            // On mobile: render inline between task picker and timer tabs
+            showSidePanel ? (
+              <div className="sm:hidden rounded-xl border bg-card p-3">
+                {chapterList}
+              </div>
+            ) : undefined
+          }
+        />
       </div>
 
+      {/* Desktop side panel */}
       {showSidePanel && (
-        <div
-          className={`hidden sm:block w-56 shrink-0 transition-all duration-200 ${
-            panelClosing ? "opacity-0 translate-x-8" : "opacity-100 translate-x-0"
-          }`}
-        >
-          <div className="sticky top-6 space-y-3 rounded-xl border bg-card p-4">
-            <h3 className="text-sm font-semibold text-foreground">{selectedTrack.name}</h3>
-            <div className="space-y-1">
-              {selectedTrack.chapters.map((c) => {
-                const color = colorFromId(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-foreground/80 transition-all duration-150 hover:-translate-y-0.5"
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = `${color}18`;
-                      e.currentTarget.style.color = color;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                      e.currentTarget.style.color = "";
-                    }}
-                    onClick={() => handleChapterSelect(c.id)}
-                  >
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full transition-transform duration-150 group-hover:scale-125"
-                      style={{ backgroundColor: color }}
-                    />
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+        <div className={`hidden sm:block w-56 shrink-0 transition-all duration-200 ${panelClosing ? "opacity-0 translate-x-8" : "opacity-100 translate-x-0"}`}>
+          <div className="sticky top-6 rounded-xl border bg-card p-4">
+            {chapterList}
           </div>
         </div>
       )}

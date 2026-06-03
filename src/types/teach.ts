@@ -12,7 +12,7 @@ export interface BoardConfig {
   content: string;
 }
 
-export type UploadedAttachmentKind = "image" | "pdf" | "text" | "file";
+export type UploadedAttachmentKind = "image" | "pdf";
 
 export interface UploadedAttachment {
   id: string;
@@ -20,8 +20,8 @@ export interface UploadedAttachment {
   mimeType: string;
   size: number;
   kind: UploadedAttachmentKind;
-  dataUrl?: string;
-  text?: string;
+  storageUrl?: string; // Firebase Storage download URL (set after upload)
+  text?: string;       // pdf: extracted text (always stored for history)
 }
 
 export interface GraphPoint {
@@ -151,6 +151,7 @@ export type BoardElement = (
 ) & { speak?: string };
 
 export type TeachMode = "jee" | "neet" | "general" | "coding" | "upsc" | "marketing";
+export type SubMode = "general" | "3d";
 
 // ─── Teaching Session ─────────────────────────────────────────────────────────
 
@@ -221,6 +222,9 @@ export interface BottomDockProps {
   attachments: UploadedAttachment[];
   onInputChange: (text: string) => void;
   disabled?: boolean;
-  /** Override the textarea placeholder — e.g. during checkpoint lock */
   placeholder?: string;
+  subMode?: SubMode;
+  onSubModeChange?: (m: SubMode) => void;
+  showSubMode?: boolean;
+  isAttachmentUploading?: boolean;
 }

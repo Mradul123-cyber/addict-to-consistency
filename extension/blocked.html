@@ -1,137 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Access Denied</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #050816;
-        --panel: rgba(17, 24, 39, 0.82);
-        --border: rgba(148, 163, 184, 0.22);
-        --text: #e5e7eb;
-        --muted: #94a3b8;
-        --accent: #8b5cf6;
-        --accent-strong: #7c3aed;
-        --shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
-      }
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Access Restricted — Matrix AirGap Shield</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-      * {
-        box-sizing: border-box;
-      }
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #060c1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        background:
-          radial-gradient(circle at top, rgba(139, 92, 246, 0.16), transparent 32%),
-          linear-gradient(180deg, #0b1022 0%, var(--bg) 100%);
-        color: var(--text);
-      }
+    /* Full-page image — fits within viewport, no cropping */
+    .page-img {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      z-index: 0;
+    }
 
-      main {
-        width: min(100%, 760px);
-        padding: 40px;
-        border: 1px solid var(--border);
-        border-radius: 28px;
-        background: var(--panel);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
-        text-align: center;
-      }
+  </style>
+</head>
+<body>
 
-      .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 14px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        color: var(--muted);
-        font-size: 12px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
+  <img class="page-img" src="blocked-page.png" alt="" />
 
-      h1 {
-        margin: 20px 0 0;
-        font-size: clamp(2rem, 5vw, 3.6rem);
-        line-height: 1;
-        letter-spacing: 0.06em;
-      }
 
-      p {
-        margin: 24px auto 0;
-        max-width: 34ch;
-        font-size: clamp(1.05rem, 2vw, 1.35rem);
-        line-height: 1.7;
-        color: #dbe4f5;
-      }
-
-      .cta {
-        margin-top: 32px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 48px;
-        padding: 0 22px;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-        color: #fff;
-        text-decoration: none;
-        font-weight: 700;
-        letter-spacing: 0.01em;
-        transition:
-          transform 160ms ease,
-          box-shadow 160ms ease,
-          filter 160ms ease;
-        box-shadow: 0 14px 40px rgba(124, 58, 237, 0.35);
-      }
-
-      .cta:hover,
-      .cta:focus-visible {
-        transform: translateY(-1px);
-        filter: brightness(1.05);
-        box-shadow: 0 18px 44px rgba(124, 58, 237, 0.42);
-      }
-
-      .cta:focus-visible {
-        outline: 2px solid rgba(255, 255, 255, 0.9);
-        outline-offset: 4px;
-      }
-
-      @media (max-width: 640px) {
-        body {
-          padding: 16px;
-        }
-
-        main {
-          padding: 28px 22px;
-          border-radius: 22px;
-        }
-
-        p {
-          max-width: none;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="eyebrow">JEE Airgap Shield</div>
-      <h1>ACCESS DENIED</h1>
-      <p>
-        A YouTube clip gives you 10 minutes of cheap dopamine. Cracking your target IIT rank
-        gives you a lifetime of leverage. Return to the Matrix Console.
-      </p>
-      <a class="cta" href="https://addict-to-consistency.lovable.app/">Return to Matrix Console</a>
-    </main>
-  </body>
+</body>
 </html>

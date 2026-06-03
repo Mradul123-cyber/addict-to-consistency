@@ -9,6 +9,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile,
+  sendEmailVerification,
 } from "firebase/auth";
 import { auth } from "../lib/firebase";
 
@@ -21,6 +22,7 @@ interface AuthContextType {
   signUpWithEmail: (email: string, password: string, displayName: string) => Promise<void>;
   signInAsGuest: (displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -50,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     if (userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
+      await sendEmailVerification(userCredential.user);
       await userCredential.user.reload();
       const updatedUser = auth.currentUser;
       if (updatedUser) {
@@ -78,6 +81,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resendVerificationEmail = async () => {
+    if (auth.currentUser) await sendEmailVerification(auth.currentUser);
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
   };
@@ -93,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUpWithEmail,
         signInAsGuest,
         signOut,
+        resendVerificationEmail,
       }}
     >
       {children}

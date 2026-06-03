@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,17 +39,23 @@ const GoogleIcon = () => (
   </svg>
 );
 
+const PUBLIC_ROUTES = ["/privacy"];
+
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsGuest } =
     useAuth();
+  const pathname = useRouterState({ select: s => s.location.pathname });
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [guestConfirmOpen, setGuestConfirmOpen] = useState(false);
   const [guestName, setGuestName] = useState("");
+
+  if (PUBLIC_ROUTES.includes(pathname)) return <>{children}</>;
 
   if (loading) {
     return (
@@ -59,7 +66,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col items-center gap-4 text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground font-medium animate-pulse">
-            Initializing JEE Console...
+            Initializing Matrix...
           </p>
         </div>
       </div>
@@ -81,12 +88,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         toast.error("Passwords do not match.");
         return;
       }
+      if (isSignUp && !privacyAccepted) {
+        toast.error("Please accept the Privacy Policy to create an account.");
+        return;
+      }
 
       setActionLoading(true);
       try {
         if (isSignUp) {
           await signUpWithEmail(email, password, name.trim());
-          toast.success("Account created successfully!");
         } else {
           await signInWithEmail(email, password);
           toast.success("Signed in successfully!");
@@ -148,20 +158,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-1/4 right-1/4 -z-10 h-[50vw] w-[50vw] rounded-full bg-violet-500/10 blur-[120px] animate-pulse duration-7000" />
 
         <Card className="w-full max-w-md bg-card/65 backdrop-blur-xl border border-border/80 shadow-2xl transition-all duration-300">
-          <CardHeader className="space-y-2 text-center pb-4">
+          <CardHeader className="space-y-2 text-center pb-3 px-5 pt-5 sm:px-6 sm:pt-6 sm:pb-4">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-inner">
               <UserCheck className="h-6 w-6" />
             </div>
-            <CardTitle className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
-              {isSignUp ? "Create Workspace" : "Console Lockscreen"}
+            <CardTitle className="text-xl sm:text-2xl font-bold tracking-tight">
+              {isSignUp ? "Create Account" : "Welcome Back"}
             </CardTitle>
             <CardDescription className="text-muted-foreground text-sm">
               {isSignUp
-                ? "Sign up to track your JEE study sessions and analytics"
-                : "Authorize to unlock your JEE preparation control deck"}
+                ? "Sign up to start learning with your AI teaching board"
+                : "Sign in to continue your learning journey"}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-5 sm:px-6">
             <form onSubmit={handleSubmit} className="space-y-3.5">
               {isSignUp && (
                 <div className="space-y-1.5 animate-fadeIn">
@@ -233,6 +243,24 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
+              {isSignUp && (
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={privacyAccepted}
+                    onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                    disabled={actionLoading}
+                    className="mt-0.5 h-4 w-4 rounded border-border accent-primary shrink-0"
+                  />
+                  <span className="text-xs text-muted-foreground leading-relaxed">
+                    I have read and agree to the{" "}
+                    <Link to="/privacy" className="text-primary hover:underline font-medium">
+                      Privacy Policy
+                    </Link>
+                  </span>
+                </label>
+              )}
+
               <Button
                 type="submit"
                 className="w-full h-10 font-medium transition-all shadow-md shadow-primary/20 hover:shadow-primary/30 hover:translate-y-[-1px] active:translate-y-[0px]"
@@ -281,7 +309,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               Continue as Guest
             </Button>
           </CardContent>
-          <CardFooter className="flex justify-center border-t border-border/40 py-4 bg-accent/20 rounded-b-xl">
+          <CardFooter className="flex flex-col items-center gap-2 border-t border-border/40 py-4 bg-accent/20 rounded-b-xl">
             <button
               type="button"
               className="text-xs font-semibold text-primary hover:underline transition-all"
@@ -291,13 +319,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 setEmail("");
                 setPassword("");
                 setConfirmPassword("");
+                setPrivacyAccepted(false);
               }}
               disabled={actionLoading}
             >
               {isSignUp
-                ? "Already have a console key? Access locks"
-                : "Need access? Initialize a new user profile"}
+                ? "Already have an account? Sign in"
+                : "Don't have an account? Sign up"}
             </button>
+            <Link
+              to="/privacy"
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Privacy Policy
+            </Link>
           </CardFooter>
         </Card>
 
@@ -310,12 +345,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             }
           }}
         >
-          <AlertDialogContent>
+          <AlertDialogContent className="max-h-[90vh] overflow-y-auto">
             <AlertDialogHeader>
               <AlertDialogTitle>Continue as Guest?</AlertDialogTitle>
               <AlertDialogDescription className="space-y-2 text-left">
                 <span className="block">
-                  You may explore JEE Console without creating an account. This is intended
+                  You may explore Matrix without creating an account. This is intended
                   for evaluation and short-term use only.
                 </span>
                 <span className="block">

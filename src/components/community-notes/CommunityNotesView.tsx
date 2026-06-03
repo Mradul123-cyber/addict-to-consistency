@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   collection, onSnapshot, doc,
-  updateDoc, arrayUnion, arrayRemove, increment,
+  updateDoc, increment, setDoc,
   addDoc, serverTimestamp, getDocs, query, where, deleteDoc,
+  orderBy, limit, startAfter, type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
@@ -21,7 +22,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import {
   Upload, ArrowBigUp, FileText, ExternalLink, Plus,
-  Loader2, AlertCircle, ShieldCheck, Trash2, X,
+  Loader2, AlertCircle, ShieldCheck, Trash2, X, Share2, Search,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,7 +38,6 @@ interface CommunityNote {
   fileNames: string[];
   fileHashes: string[];
   upvotes: number;
-  upvotedBy: string[];
   status: "unverified" | "verified";
   createdAt: number;
 }
@@ -77,23 +77,98 @@ export function CommunityNotesView() {
   const { user } = useAuth();
   const [notes, setNotes] = useState<CommunityNote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"all" | "verified" | "unverified">("all");
+  const [tab, setTab] = useState<"verified" | "unverified">("verified");
   const [filterSubject, setFilterSubject] = useState<Subject | "all">("all");
   const [filterChapter, setFilterChapter] = useState("all");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteNote, setDeleteNote] = useState<CommunityNote | null>(null);
   const [openFilesNote, setOpenFilesNote] = useState<CommunityNote | null>(null);
   const [votingId, setVotingId] = useState<string | null>(null);
+  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
+  const [userVotes, setUserVotes] = useState<Set<string>>(new Set());
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<CommunityNote[]>([]);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const PAGE_SIZE = 20;
+  const isSearching = search.trim().length > 0;
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "communityNotes"), snap => {
-      const data: CommunityNote[] = [];
-      snap.forEach(d => data.push({ id: d.id, ...d.data() } as CommunityNote));
-      setNotes(data);
+    const q = query(collection(db, "communityNotes"), orderBy("createdAt", "desc"), limit(PAGE_SIZE));
+    const unsub = onSnapshot(q, snap => {
+      setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() } as CommunityNote)));
+      setLastDoc(snap.docs[snap.docs.length - 1] ?? null);
+      setHasMore(snap.docs.length === PAGE_SIZE);
       setLoading(false);
     }, () => setLoading(false));
     return () => unsub();
   }, []);
+
+  // Load user's votes once — O(1) hasVoted checks instead of array scans
+  useEffect(() => {
+    if (!user?.uid) return;
+    const votesRef = collection(db, "users", user.uid, "communityVotes");
+    const unsub = onSnapshot(votesRef, snap => {
+      setUserVotes(new Set(snap.docs.map(d => d.id)));
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  // Prefix search — fires when user types, debounced 350ms
+  useEffect(() => {
+    clearTimeout(searchTimeoutRef.current);
+    if (!search.trim()) { setSearchResults([]); setSearching(false); return; }
+    setSearching(true);
+    const q = search.trim();
+    const qLower = q.charAt(0).toLowerCase() + q.slice(1);
+    const qUpper = q.charAt(0).toUpperCase() + q.slice(1);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const makeQuery = (start: string) => getDocs(query(
+          collection(db, "communityNotes"),
+          orderBy("title"),
+          where("title", ">=", start),
+          where("title", "<=", start + ""),
+          limit(20)
+        ));
+        const [snapLower, snapUpper] = await Promise.all([makeQuery(qLower), makeQuery(qUpper)]);
+        const seen = new Set<string>();
+        const merged: CommunityNote[] = [];
+        for (const snap of [snapLower, snapUpper]) {
+          snap.docs.forEach(d => {
+            if (!seen.has(d.id)) { seen.add(d.id); merged.push({ id: d.id, ...d.data() } as CommunityNote); }
+          });
+        }
+        setSearchResults(merged);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(searchTimeoutRef.current);
+  }, [search]);
+
+  const handleLoadMore = async () => {
+    if (!lastDoc || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, "communityNotes"),
+        orderBy("createdAt", "desc"),
+        startAfter(lastDoc),
+        limit(PAGE_SIZE)
+      );
+      const snap = await getDocs(q);
+      setNotes(prev => [...prev, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as CommunityNote))]);
+      setLastDoc(snap.docs[snap.docs.length - 1] ?? null);
+      setHasMore(snap.docs.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const counts = useMemo(() => ({
     all: notes.length,
@@ -107,27 +182,59 @@ export function CommunityNotesView() {
   );
 
   const visibleNotes = useMemo(() => {
-    return notes.filter(n => {
+    const pool = isSearching ? searchResults : notes;
+    return pool.filter(n => {
       if (tab === "verified" && n.status !== "verified") return false;
       if (tab === "unverified" && n.status !== "unverified") return false;
       if (filterSubject !== "all" && n.subject !== filterSubject) return false;
       if (filterChapter !== "all" && n.chapterId !== filterChapter) return false;
       return true;
     }).sort((a, b) => b.upvotes - a.upvotes);
-  }, [notes, tab, filterSubject, filterChapter]);
+  }, [isSearching, searchResults, notes, tab, filterSubject, filterChapter]);
+
+  useEffect(() => {
+    if (loading || notes.length === 0) return;
+    const noteId = new URLSearchParams(window.location.search).get("note");
+    if (!noteId) return;
+    const target = notes.find(n => n.id === noteId);
+    if (!target) return;
+    setTab(target.status === "verified" ? "verified" : "unverified");
+    setHighlightedNoteId(noteId);
+    const scrollTimer = setTimeout(() => {
+      document.getElementById(`note-${noteId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    const clearTimer = setTimeout(() => setHighlightedNoteId(null), 3500);
+    return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, notes.length]);
+
+  const handleShare = async (note: CommunityNote) => {
+    const url = `${window.location.origin}/community-notes?note=${note.id}`;
+    const text = `Check out these JEE notes: "${note.title}" — ${chapterName(note.chapterId)}`;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (navigator.share && isMobile) {
+      try { await navigator.share({ title: note.title, text, url }); } catch { /* cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied!");
+    }
+  };
 
   const handleUpvote = async (note: CommunityNote) => {
     if (!user) return;
     if (note.uploadedBy === user.uid) { toast.error("Can't upvote your own note"); return; }
-    const hasVoted = note.upvotedBy?.includes(user.uid);
+    const hasVoted = userVotes.has(note.id);
     setVotingId(note.id);
     try {
+      const voteRef = doc(db, "users", user.uid, "communityVotes", note.id);
       const newUpvotes = (note.upvotes ?? 0) + (hasVoted ? -1 : 1);
-      await updateDoc(doc(db, "communityNotes", note.id), {
-        upvotes: increment(hasVoted ? -1 : 1),
-        upvotedBy: hasVoted ? arrayRemove(user.uid) : arrayUnion(user.uid),
-        status: newUpvotes >= APPROVAL_THRESHOLD ? "verified" : "unverified",
-      });
+      await Promise.all([
+        hasVoted ? deleteDoc(voteRef) : setDoc(voteRef, { votedAt: Date.now() }),
+        updateDoc(doc(db, "communityNotes", note.id), {
+          upvotes: increment(hasVoted ? -1 : 1),
+          status: newUpvotes >= APPROVAL_THRESHOLD ? "verified" : "unverified",
+        }),
+      ]);
     } catch { toast.error("Failed to vote"); }
     finally { setVotingId(null); }
   };
@@ -142,7 +249,6 @@ export function CommunityNotesView() {
   };
 
   const TABS = [
-    { key: "all", label: "All Notes", count: counts.all },
     { key: "verified", label: "Verified", count: counts.verified },
     { key: "unverified", label: "Needs Review", count: counts.unverified },
   ] as const;
@@ -202,6 +308,21 @@ export function CommunityNotesView() {
         transition={{ duration: 0.3, delay: 0.1 }}
         className="flex flex-wrap items-center gap-3"
       >
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by title..."
+            className="h-8 w-48 rounded-full border bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => { setFilterSubject("all"); setFilterChapter("all"); }}
@@ -246,23 +367,16 @@ export function CommunityNotesView() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleNotes.length === 0 ? (
+          {visibleNotes.length === 0 && !searching ? (
             <div className="col-span-full flex min-h-[35vh] flex-col items-center justify-center gap-3 text-center">
               <p className="text-3xl font-bold tracking-tight">
-                {tab === "verified" ? "No Verified Notes Yet"
-                  : tab === "unverified" ? "No Notes Need Review"
-                  : "No Notes Yet"}
+                {isSearching ? "No notes found" : tab === "verified" ? "No Verified Notes Yet" : "No Notes Need Review"}
               </p>
               <p className="text-sm text-muted-foreground max-w-xs">
-                {tab === "verified" ? "Notes earn the Verified badge after 10 upvotes."
-                  : tab === "unverified" ? "All uploaded notes have been verified."
-                  : "Be the first to share your notes with the community."}
+                {isSearching ? "Try a different search term."
+                  : tab === "verified" ? "Notes earn the Verified badge after 10 upvotes."
+                  : "All uploaded notes have been verified."}
               </p>
-              {tab === "all" && (
-                <Button onClick={() => setUploadOpen(true)} className="gap-2 mt-1">
-                  <Plus className="h-4 w-4" /> Upload Notes
-                </Button>
-              )}
             </div>
           ) : visibleNotes.map((note, i) => (
             <NoteCard
@@ -270,12 +384,32 @@ export function CommunityNotesView() {
               note={note}
               index={i}
               userId={user?.uid ?? ""}
+              hasVoted={userVotes.has(note.id)}
               votingId={votingId}
+              isHighlighted={highlightedNoteId === note.id}
               onUpvote={handleUpvote}
+              onShare={handleShare}
               onDelete={setDeleteNote}
               onOpenFiles={setOpenFilesNote}
             />
           ))}
+        </div>
+      )}
+
+      {/* Searching indicator */}
+      {searching && (
+        <div className="flex justify-center pt-2">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Load more — hidden during search */}
+      {hasMore && !loading && !isSearching && (
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" onClick={handleLoadMore} disabled={loadingMore} className="gap-2">
+            {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+            {loadingMore ? "Loading..." : "Load more notes"}
+          </Button>
         </div>
       )}
 
@@ -348,28 +482,31 @@ interface NoteCardProps {
   note: CommunityNote;
   index: number;
   userId: string;
+  hasVoted: boolean;
   votingId: string | null;
+  isHighlighted: boolean;
   onUpvote: (note: CommunityNote) => void;
+  onShare: (note: CommunityNote) => void;
   onDelete: (note: CommunityNote) => void;
   onOpenFiles: (note: CommunityNote) => void;
 }
 
-function NoteCard({ note, index, userId, votingId, onUpvote, onDelete, onOpenFiles }: NoteCardProps) {
+function NoteCard({ note, index, userId, hasVoted, votingId, isHighlighted, onUpvote, onShare, onDelete, onOpenFiles }: NoteCardProps) {
   const isOwn = note.uploadedBy === userId;
   const isVerified = note.status === "verified";
-  const hasVoted = note.upvotedBy?.includes(userId);
   const isMulti = (note.fileUrls?.length ?? 0) > 1;
   const progress = Math.min(((note.upvotes ?? 0) / APPROVAL_THRESHOLD) * 100, 100);
 
   return (
     <motion.div
+      id={`note-${note.id}`}
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.04 }}
       onClick={() => { if (isMulti) onOpenFiles(note); }}
-      className={`group flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors ${
+      className={`group flex flex-col gap-3 rounded-xl border bg-card p-4 transition-all ${
         isMulti ? "cursor-pointer hover:border-foreground/30" : ""
-      }`}
+      } ${isHighlighted ? "ring-2 ring-indigo-500 border-indigo-500/50" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -416,6 +553,12 @@ function NoteCard({ note, index, userId, votingId, onUpvote, onDelete, onOpenFil
         >
           {votingId === note.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowBigUp className="h-3.5 w-3.5" />}
           {note.upvotes ?? 0}
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onShare(note); }}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Share2 className="h-3.5 w-3.5" />
         </button>
         {!isMulti && (
           <button
@@ -487,7 +630,7 @@ function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
     setUploading(true);
     try {
       const hashes = await Promise.all(files.map(hashFile));
-      const dupSnap = await getDocs(query(collection(db, "communityNotes"), where("fileHashes", "array-contains-any", hashes)));
+      const dupSnap = await getDocs(query(collection(db, "communityNotes"), where("fileHashes", "array-contains-any", hashes), limit(1)));
       if (!dupSnap.empty) {
         const dup = dupSnap.docs[0].data();
         const dupHashSet = new Set(dup.fileHashes as string[]);
@@ -509,7 +652,7 @@ function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
         uploadedBy: user.uid,
         uploaderName: user.displayName ?? user.email ?? "Student",
         fileUrls, fileNames: files.map(f => f.name), fileHashes: hashes,
-        upvotes: 0, upvotedBy: [], status: "unverified",
+        upvotes: 0, status: "unverified",
         createdAt: serverTimestamp(),
       });
       toast.success(`${files.length} file${files.length > 1 ? "s" : ""} uploaded. Now publicly visible.`);

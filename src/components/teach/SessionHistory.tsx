@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  listTeachSessions, renameTeachSession, deleteTeachSession,
+  listTeachSessionsPaged, renameTeachSession, deleteTeachSession,
   type TeachSession,
 } from "@/lib/teach-sessions";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -17,6 +17,7 @@ interface SessionHistoryProps {
   uid: string;
   currentSessionId: string | null;
   onLoadSession: (session: TeachSession) => void;
+  preloadedSessions?: TeachSession[];
 }
 
 function formatDate(ts: number) {
@@ -29,9 +30,12 @@ function formatDate(ts: number) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSession }: SessionHistoryProps) {
+export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSession, preloadedSessions = [] }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<TeachSession[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<TeachSession | null>(null);
@@ -39,12 +43,40 @@ export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSes
 
   useEffect(() => {
     if (!open || !uid) return;
-    setLoading(true);
-    listTeachSessions(uid)
-      .then(setSessions)
+
+    // Show preloaded 2 sessions instantly
+    setSessions(preloadedSessions);
+    const afterTs = preloadedSessions.at(-1)?.updatedAt;
+
+    // Fetch 3 more in background
+    setLoading(preloadedSessions.length === 0);
+    listTeachSessionsPaged(uid, 3, afterTs)
+      .then(({ sessions: more, hasMore: moreExist, lastUpdatedAt: lastTs }) => {
+        setSessions(prev => {
+          const ids = new Set(prev.map(s => s.id));
+          return [...prev, ...more.filter(s => !ids.has(s.id))];
+        });
+        setHasMore(moreExist);
+        setLastUpdatedAt(lastTs);
+      })
       .catch(() => toast.error("Failed to load sessions"))
       .finally(() => setLoading(false));
-  }, [open, uid]);
+  }, [open, uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLoadMore = async () => {
+    if (!lastUpdatedAt || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { sessions: more, hasMore: moreExist, lastUpdatedAt: lastTs } = await listTeachSessionsPaged(uid, 5, lastUpdatedAt);
+      setSessions(prev => [...prev, ...more]);
+      setHasMore(moreExist);
+      setLastUpdatedAt(lastTs);
+    } catch {
+      toast.error("Failed to load more sessions");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
@@ -92,7 +124,7 @@ export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSes
             </SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto flex flex-col">
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -182,6 +214,14 @@ export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSes
                   })}
                 </div>
               </AnimatePresence>
+            )}
+            {hasMore && !loading && (
+              <div className="p-4 border-t mt-auto">
+                <Button variant="outline" size="sm" className="w-full gap-2" onClick={handleLoadMore} disabled={loadingMore}>
+                  {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {loadingMore ? "Loading..." : "Load more"}
+                </Button>
+              </div>
             )}
           </div>
         </SheetContent>

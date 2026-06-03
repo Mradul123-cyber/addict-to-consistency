@@ -20,6 +20,9 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Worker source — deployed to Cloudflare separately, not needed for frontend hosting
+my-jee-worker/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -39,3 +42,12 @@ storage.cors.json
 .cursor/
 .lovable/
 .env
+
+# Extension build zips
+extension-chrome.zip
+extension/firefox/*.zip
+
+# Temporary test/preview files
+src/routes/nav-test.tsx
+src/routes/teach-test.tsx
+public/nav-preview.html

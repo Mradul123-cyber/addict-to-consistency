@@ -55,7 +55,7 @@ import { PriorityDropdown } from "@/components/PriorityDropdown";
  export const Route = createFileRoute("/matrix")({
   head: () => ({
     meta: [
-      { title: "Override Matrix — JEE Console" },
+      { title: "Override Matrix — Matrix" },
       {
         name: "description",
         content:
@@ -479,13 +479,14 @@ function MatrixPage() {
                       return (
                         <div
                           key={c.id}
-                          className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-3 sm:gap-4"
+                          className="grid grid-cols-[1fr_auto] items-start gap-x-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4"
                         >
+                          {/* Column 1: name + priority (+ time on desktop) */}
                           <div className="flex min-w-0 items-center gap-2">
                             <button
                               type="button"
-                                  onClick={() => beginEdit(c.id, pct)}
-                              className="truncate text-left text-sm font-medium hover:underline"
+                              onClick={() => beginEdit(c.id, pct)}
+                              className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
                             >
                               {c.name}
                             </button>
@@ -493,20 +494,23 @@ function MatrixPage() {
                               value={c.priority}
                               onChange={(v) => setChapterPriority(c.id, v)}
                             />
-                            {hasConcepts && (
-                              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                                {doneCount}/{c.concepts!.length}
-                              </span>
-                            )}
                             {minutesByChapter[c.id] > 0 && (
-                              <span className="shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+                              <span className="hidden sm:inline shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
                                 {Math.round(minutesByChapter[c.id] / 60 * 10) / 10}h
                               </span>
                             )}
                           </div>
 
-                          <div className="w-32 sm:w-48">
-                            <Progress value={pct} />
+                          {/* Column 2: progress bar — full-width below name on mobile, inline on desktop */}
+                          <div className="hidden sm:flex items-center gap-1.5">
+                            {hasConcepts && (
+                              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {doneCount}/{c.concepts!.length}
+                              </span>
+                            )}
+                            <div className="w-32 md:w-48">
+                              <Progress value={pct} />
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-1.5">

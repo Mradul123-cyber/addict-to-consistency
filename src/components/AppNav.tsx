@@ -5,6 +5,7 @@ import {
   canChangeDailyGoal,
   DAILY_GOAL_OPTIONS,
   DEFAULT_DAILY_GOAL_MINUTES,
+
   daysUntilExam,
   MAX_DAILY_GOAL_MINUTES,
   MIN_DAILY_GOAL_MINUTES,
@@ -44,7 +45,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Bookmark, ClipboardList, Download, LogOut, Menu, Moon, ShieldCheck, Sun, Target, X } from "lucide-react";
+import { Bookmark, ChevronDown, ClipboardList, Download, LogOut, Menu, Moon, Shield, ShieldCheck, Sparkles, Sun, Target, X } from "lucide-react";
 import { isInstalledPwa, subscribePwaInstall, triggerInstallPrompt } from "@/lib/pwa-install";
 
 /** Chromium PWA install prompt (not available on iOS Safari). */
@@ -59,13 +60,19 @@ function isIOSDevice() {
 }
 
 
-const links = [
+const JEE_LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/notes", label: "Notes" },
   { to: "/focus", label: "Focus" },
   { to: "/airgap", label: "Airgap" },
-  { to: "/matrix", label: "Matrix" },
+  { to: "/matrix", label: "Tracks" },
   { to: "/teach", label: "Studio" },
+] as const;
+
+const PRO_LINKS = [
+  { to: "/teach", label: "Studio" },
+  { to: "/focus", label: "Focus" },
+  { to: "/airgap", label: "Airgap" },
 ] as const;
 
 const navLinkClass =
@@ -86,7 +93,9 @@ function getInitials(name: string | null, email: string | null): string {
 export function AppNav() {
   useStore();
   const { isAdmin } = useAdmin();
-  const { profile, targetDate, saveDailyGoalMinutes } = useProfile();
+  const { profile, targetDate, saveDailyGoalMinutes, saveProfile } = useProfile();
+  const isPro = profile?.mode === "professional";
+  const links = isPro ? PRO_LINKS : JEE_LINKS;
   const days = targetDate ? daysUntilExam(targetDate) : 0;
   const { user, signOut } = useAuth();
   const { isOn, isExtensionReady } = useAirgap();
@@ -94,12 +103,16 @@ export function AppNav() {
   const isNotesRoute = useRouterState({
     select: (s) => s.location.pathname.startsWith("/notes"),
   });
+  const isStudioRoute = useRouterState({
+    select: (s) => s.location.pathname === "/teach",
+  });
   const { bookmarkCount, openBookmarks } = useNotesChrome();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [customGoalOpen, setCustomGoalOpen] = useState(false);
+  const [goalExpanded, setGoalExpanded] = useState(false);
   const [customGoalValue, setCustomGoalValue] = useState("");
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -232,7 +245,7 @@ export function AppNav() {
         <div className="fixed inset-0 z-50 bg-foreground/30 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card ring-1 ring-border/80 rounded-2xl p-6 w-full max-w-sm shadow-xl">
             <div className="flex items-start gap-4 mb-5">
-              <img src="/icons/bell.png.png" alt="" className="h-12 w-12 shrink-0" />
+              <img src="/icons/bell.png" alt="" className="h-12 w-12 shrink-0" />
               <div className="min-w-0 flex-1 pt-0.5">
                 <p className="text-base font-bold text-foreground">Today's Tasks</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -266,10 +279,10 @@ export function AppNav() {
         {/* Left: brand + desktop nav + mobile menu toggle */}
         <div className="flex min-w-0 items-center gap-2 md:gap-6">
           <Link
-            to="/"
+            to={isPro ? "/teach" : "/"}
             className="shrink-0 text-base font-semibold tracking-tight max-[529px]:max-w-[7.5rem] max-[529px]:truncate"
           >
-            JEE Console
+            {isPro ? "Matrix" : "Matrix"}
           </Link>
 
           <Button
@@ -329,10 +342,12 @@ export function AppNav() {
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
 
-          <div className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium tabular-nums max-[529px]:px-1.5 max-[529px]:text-[10px] sm:px-3">
-            <span className="text-muted-foreground">JEE {profile?.targetYear ?? "—"} · </span>
-            <span className="text-foreground">{days} days</span>
-          </div>
+          {!isPro && (
+            <div className="rounded-md border bg-background px-2 py-1.5 text-xs font-medium tabular-nums max-[529px]:px-1.5 max-[529px]:text-[10px] sm:px-3">
+              <span className="text-muted-foreground">JEE {profile?.targetYear ?? "—"} · </span>
+              <span className="text-foreground">{days} days</span>
+            </div>
+          )}
 
           <Link to="/airgap">
             <Badge
@@ -406,12 +421,15 @@ export function AppNav() {
 
                 <DropdownMenuSeparator className="min-[530px]:hidden" />
 
-                <DropdownMenuItem asChild>
-                  <Link to="/log" className="cursor-pointer">
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    Log
-                  </Link>
-                </DropdownMenuItem>
+                {!isPro && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/log" className="cursor-pointer">
+                      <ClipboardList className="mr-2 h-4 w-4" />
+                      Log
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+
 
                 {isAdmin && (
                   <DropdownMenuItem asChild>
@@ -438,31 +456,30 @@ export function AppNav() {
 
                 {!isInstalled && <DropdownMenuSeparator />}
 
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer">
-                    <Target className="mr-2 h-4 w-4" />
-                    Daily goal
-                    <span className="rounded bg-muted px-1 text-xs text-muted-foreground">
-                      {dailyGoalMinutes}m
-                    </span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-48">
-                    <DropdownMenuLabel className={`text-xs font-normal transition-colors ${lockedHovered ? "text-red-500 animate-shake" : "text-muted-foreground"}`}>
-                      {goalCanChange
-                        ? "Choose your daily goal"
-                        : `Locked until ${nextGoalChangeLabel ?? "30 days pass"}`}
+                {/* Daily goal — inline expandable, no side submenu */}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={(e) => { e.preventDefault(); setGoalExpanded(o => !o); }}
+                >
+                  <Target className="mr-2 h-4 w-4" />
+                  Daily goal
+                  <span className="ml-1 rounded bg-muted px-1 text-xs text-muted-foreground">{dailyGoalMinutes}m</span>
+                  <ChevronDown className={`ml-auto h-3.5 w-3.5 transition-transform ${goalExpanded ? "rotate-180" : ""}`} />
+                </DropdownMenuItem>
+                {goalExpanded && (
+                  <>
+                    <DropdownMenuLabel className={`pl-8 text-xs font-normal transition-colors ${lockedHovered ? "text-red-500 animate-shake" : "text-muted-foreground"}`}>
+                      {goalCanChange ? "Choose your daily goal" : `Locked until ${nextGoalChangeLabel ?? "30 days pass"}`}
                     </DropdownMenuLabel>
                     <DropdownMenuRadioGroup
                       value={String(dailyGoalMinutes)}
-                      onValueChange={(value) => {
-                        void handleDailyGoalChange(value);
-                      }}
+                      onValueChange={(value) => { void handleDailyGoalChange(value); setGoalExpanded(false); }}
                     >
                       {DAILY_GOAL_OPTIONS.map((minutes) => (
                         <DropdownMenuRadioItem
                           key={minutes}
                           value={String(minutes)}
-                          className={`cursor-pointer ${!goalCanChange && minutes !== dailyGoalMinutes ? "opacity-50" : ""}`}
+                          className={`cursor-pointer pl-8 ${!goalCanChange && minutes !== dailyGoalMinutes ? "opacity-50" : ""}`}
                           onSelect={(e) => {
                             if (!goalCanChange && minutes !== dailyGoalMinutes) {
                               e.preventDefault();
@@ -479,14 +496,11 @@ export function AppNav() {
                     </DropdownMenuRadioGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      className={`cursor-pointer ${!goalCanChange ? "opacity-50" : ""}`}
+                      className={`cursor-pointer pl-8 ${!goalCanChange ? "opacity-50" : ""}`}
                       onSelect={(e) => {
-                        if (!goalCanChange) {
-                          setLockedHovered(true);
-                          setTimeout(() => setLockedHovered(false), 500);
-                          return;
-                        }
+                        if (!goalCanChange) { setLockedHovered(true); setTimeout(() => setLockedHovered(false), 500); return; }
                         e.preventDefault();
+                        setGoalExpanded(false);
                         openCustomGoalDialog();
                       }}
                       onMouseEnter={() => { if (!goalCanChange) setLockedHovered(true); }}
@@ -494,8 +508,17 @@ export function AppNav() {
                     >
                       Custom minutes
                     </DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                  </>
+                )}
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link to="/privacy">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Privacy Policy
+                  </Link>
+                </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 
@@ -509,6 +532,25 @@ export function AppNav() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+
+          {isStudioRoute && (
+            <button
+              onClick={() => {
+                const el = document.getElementById("studio-upgrade-trigger");
+                el?.click();
+              }}
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 sm:px-3 text-xs font-bold text-white shadow-sm transition-all hover:scale-105 active:scale-95"
+              style={{
+                background: "linear-gradient(135deg, #4285F4 0%, #9C27B0 35%, #E91E63 65%, #FF7043 100%)",
+                backgroundSize: "200% 200%",
+                animation: "gemini-shift 4s ease infinite",
+              }}
+            >
+              <Sparkles size={12} />
+              <span className="sm:hidden">Pro</span>
+              <span className="hidden sm:inline">Upgrade</span>
+            </button>
           )}
         </div>
       </div>

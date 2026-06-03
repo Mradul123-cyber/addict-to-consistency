@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Flame, Target, Plus, Trash2 } from "lucide-react";
 import { isoDay, minutesByDay } from "@/lib/analytics";
 import type { SessionLog, Track } from "@/lib/store";
@@ -83,6 +83,29 @@ export function StudyCalendar({
       return JSON.parse(localStorage.getItem("calendar-tasks") ?? "{}");
     } catch { return {}; }
   });
+
+  // Stay in sync when TaskPanel (or any other source) updates calendar tasks
+  useEffect(() => {
+    const handler = () => {
+      try { setTasks(JSON.parse(localStorage.getItem("calendar-tasks") ?? "{}")); } catch { /* ignore */ }
+    };
+    window.addEventListener("tasks-updated", handler);
+    return () => window.removeEventListener("tasks-updated", handler);
+  }, []);
+
+  // Deselect date when clicking outside the calendar
+  const calendarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selectedDateISO) return;
+    const handler = (e: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(e.target as Node)) {
+        setSelectedDateISO(null);
+        setTaskInput("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [selectedDateISO]);
   const [taskInput, setTaskInput] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -201,7 +224,7 @@ export function StudyCalendar({
 
   return (
     <>
-    <div className="space-y-4">
+    <div className="space-y-4" ref={calendarRef}>
       <div className="rounded-2xl ring-1 ring-border bg-card overflow-hidden shadow-sm">
         {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -246,24 +269,28 @@ export function StudyCalendar({
             const isSelected = c.iso === selectedDateISO;
             const intensity = Math.min(c.totalMinutes / 240, 1);
 
+            const showInlineInput = isSelected && c.inMonth && (c.isToday || c.date > now);
+            const CellTag = showInlineInput ? "div" : "button";
             return (
-              <button
+              <CellTag
                 key={i}
-                onClick={() => setSelectedDateISO(c.iso === selectedDateISO ? null : c.iso)}
+                {...(!showInlineInput ? { onClick: () => setSelectedDateISO(c.iso === selectedDateISO ? null : c.iso) } : { onClick: undefined })}
                 className={[
-                   "aspect-square p-1.5 border-b border-r border-border text-left text-xs transition-all duration-300 ease-out relative",
-                   c.inMonth
+                   showInlineInput ? "p-1.5 border-b border-r border-border text-left text-xs z-10 relative" : "aspect-square p-1.5 border-b border-r border-border text-left text-xs transition-all duration-300 ease-out relative",
+                   c.inMonth && !showInlineInput
                      ? "hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg hover:z-10 hover:!bg-amber-50 dark:hover:!bg-[#FFA000]/35"
                      : "text-muted-foreground/25",
-                   isSelected ? "ring-2 ring-inset ring-foreground bg-muted/40 z-10" : "",
+                   isSelected ? "ring-2 ring-inset ring-foreground bg-muted/40" : "",
                  ].join(" ")}
                 style={
                   c.inMonth && !isSelected
-                    ? c.date < now && c.totalMinutes > 0
-                      ? { backgroundColor: `color-mix(in oklab, #3b82f6 ${Math.round(Math.min(c.totalMinutes / 240, 1) * 8)}%, transparent)` }
-                      : intensity > 0
-                        ? { backgroundColor: `color-mix(in oklab, hsl(var(--foreground)) ${Math.round(intensity * 6)}%, transparent)` }
-                        : undefined
+                    ? c.isToday
+                      ? { backgroundColor: `color-mix(in oklab, #3b82f6 9%, transparent)` }
+                      : c.date < now && c.totalMinutes > 0
+                        ? { backgroundColor: `color-mix(in oklab, #3b82f6 ${Math.round(Math.min(c.totalMinutes / 240, 1) * 8)}%, transparent)` }
+                        : intensity > 0
+                          ? { backgroundColor: `color-mix(in oklab, hsl(var(--foreground)) ${Math.round(intensity * 6)}%, transparent)` }
+                          : undefined
                     : undefined
                 }
               >
@@ -271,9 +298,6 @@ export function StudyCalendar({
                   <span className={`font-semibold leading-none ${c.isToday ? "text-foreground" : c.inMonth ? "text-foreground/70" : ""}`}>
                     {c.day}
                   </span>
-                  {c.isToday && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-foreground/60 mt-0.5" />
-                  )}
                 </div>
                 {c.inMonth && c.totalMinutes > 0 && (
                   <div className="mt-1 flex flex-col gap-[3px]">
@@ -305,7 +329,30 @@ export function StudyCalendar({
                     })}
                   </div>
                 )}
-              </button>
+
+                {/* Inline task input — only on selected today/future cell */}
+                {showInlineInput && (
+                  <div className="mt-1.5 flex gap-1">
+                    <input
+                      autoFocus
+                      value={taskInput}
+                      onChange={(e) => setTaskInput(e.target.value)}
+                      placeholder="Add task..."
+                      className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-1 text-[10px] text-foreground outline-none focus:border-foreground/40"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && taskInput.trim()) {
+                          const next = { ...tasks };
+                          next[c.iso] = [...(next[c.iso] ?? []), { text: taskInput.trim(), done: false }];
+                          saveTasks(next);
+                          setTaskInput("");
+                        }
+                        if (e.key === "Escape") setSelectedDateISO(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                )}
+              </CellTag>
             );
           })}
         </div>
@@ -369,66 +416,6 @@ export function StudyCalendar({
               </div>
             ))}
 
-            {/* Task section for today and future dates */}
-            {!isFuture && !isTodaySelected ? null : (
-              <div>
-                {!isFuture && isTodaySelected && (
-                  <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">Tasks</h5>
-                )}
-                {dayTasks.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {dayTasks.map((t, i) => (
-                      <div key={i} className="flex items-center justify-between gap-3 bg-card rounded-xl ring-1 ring-border p-3">
-                        <span className="text-sm font-semibold text-foreground">→ {t.text}</span>
-                        <button
-                          onClick={() => {
-                            const next = { ...tasks };
-                            next[selectedDateISO] = next[selectedDateISO].filter((_, idx) => idx !== i);
-                            if (next[selectedDateISO].length === 0) delete next[selectedDateISO];
-                            saveTasks(next);
-                          }}
-                          className="shrink-0 text-muted-foreground hover:text-foreground"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {dayTasks.length < 3 && (
-                  <div className="flex gap-2">
-                    <input
-                      value={taskInput}
-                      onChange={(e) => setTaskInput(e.target.value)}
-                      placeholder="e.g. Revise Organic Chemistry"
-                      className="flex-1 bg-card ring-1 ring-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-foreground/30 transition-all placeholder:text-muted-foreground/40"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && taskInput.trim()) {
-                          const next = { ...tasks };
-                          next[selectedDateISO] = [...(next[selectedDateISO] ?? []), { text: taskInput.trim(), done: false }];
-                          saveTasks(next);
-                          setTaskInput("");
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        if (taskInput.trim()) {
-                          const next = { ...tasks };
-                          next[selectedDateISO] = [...(next[selectedDateISO] ?? []), { text: taskInput.trim(), done: false }];
-                          saveTasks(next);
-                          setTaskInput("");
-                        }
-                      }}
-                      disabled={!taskInput.trim()}
-                      className="px-4 py-2 rounded-md text-xs font-semibold bg-foreground text-background hover:opacity-90 transition-opacity disabled:opacity-40"
-                    >
-                      Add
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>

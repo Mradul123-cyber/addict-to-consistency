@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
   "name": "AirGap Shield",
-  "version": "1.0.0",
-  "description": "Blocks distracting sites while you study for JEE. Controlled from the Matrix Console.",
+  "version": "1.0.1",
+  "description": "Blocks distracting sites so you can stay focused on what matters. Controlled from the Matrix Console.",
   "permissions": [
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
   ],
   "host_permissions": [
     "http://localhost/*",
@@ -45,6 +45,6 @@
     }
   ],
   "action": {
-    "default_title": "JEE Airgap Shield"
+    "default_title": "AirGap Shield"
   }
 }

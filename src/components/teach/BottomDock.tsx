@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { FileText, ImageIcon, Mic, MicOff, Paperclip, SendHorizonal, X, Mic2, ChevronDown, Check } from "lucide-react";
+import { motion } from "framer-motion";
+import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, Mic2, ChevronDown, Check, Loader2 } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
 import { PRESET_VOICES, getSavedVoiceId, saveVoiceId } from "@/lib/tts";
 
@@ -11,26 +11,24 @@ export function BottomDock({
   onInputChange,
   disabled = false,
   placeholder = "Ask anything about this concept…",
+  subMode = "general",
+  onSubModeChange,
+  showSubMode = false,
+  isAttachmentUploading = false,
 }: BottomDockProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<HTMLDivElement>(null);
+  const subModeRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [subModeOpen, setSubModeOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
-  const [showCustom, setShowCustom] = useState(false);
-  const [customId, setCustomId] = useState("");
 
   const selectVoice = (id: string) => {
     saveVoiceId(id);
     setSelectedVoice(id);
     setVoiceOpen(false);
-    setShowCustom(false);
-    setCustomId("");
-  };
-
-  const applyCustom = () => {
-    if (customId.trim()) selectVoice(customId.trim());
   };
 
   const currentVoice = PRESET_VOICES.find(v => v.id === selectedVoice);
@@ -38,6 +36,7 @@ export function BottomDock({
   useEffect(() => {
     const handle = (e: MouseEvent) => {
       if (!voiceRef.current?.contains(e.target as Node)) setVoiceOpen(false);
+      if (!subModeRef.current?.contains(e.target as Node)) setSubModeOpen(false);
     };
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
@@ -123,7 +122,7 @@ export function BottomDock({
 
   return (
     <motion.div
-      className="pointer-events-none fixed bottom-5 left-0 right-0 z-[60] flex justify-center px-4"
+      className="pointer-events-none fixed bottom-5 left-0 right-0 z-[60] flex justify-center px-2 sm:px-4"
       initial={{ y: 28, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
@@ -158,20 +157,24 @@ export function BottomDock({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,.pdf,.txt,.md,.csv"
+          accept="image/*,.pdf"
           className="hidden"
           onChange={handleFileChange}
-          disabled={disabled}
+          disabled={disabled || isAttachmentUploading}
         />
         <motion.button
           type="button"
-          whileTap={{ scale: 0.85 }}
-          onClick={() => fileRef.current?.click()}
-          disabled={disabled}
-          aria-label="Upload file"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white/65 disabled:opacity-25"
+          whileTap={{ scale: isAttachmentUploading ? 1 : 0.85 }}
+          onClick={() => !isAttachmentUploading && fileRef.current?.click()}
+          disabled={disabled || isAttachmentUploading}
+          aria-label={isAttachmentUploading ? "Uploading…" : "Upload image or PDF"}
+          title={isAttachmentUploading ? "Uploading file…" : undefined}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white/65 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Paperclip className="h-4 w-4" />
+          {isAttachmentUploading
+            ? <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+            : <Paperclip className="h-4 w-4" />
+          }
         </motion.button>
 
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -221,8 +224,43 @@ export function BottomDock({
           />
         </div>
 
+        {/* Sub-mode picker — only for JEE/NEET */}
+        {showSubMode && (
+          <div ref={subModeRef} className="relative shrink-0">
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.85 }}
+              onClick={() => setSubModeOpen(o => !o)}
+              className="flex h-9 items-center gap-1 rounded-xl px-2 text-white/35 transition-all hover:bg-white/8 hover:text-white/65"
+            >
+              <span className="text-[11px] font-semibold">{subMode === "3d" ? "3D" : "Gen"}</span>
+              <ChevronDown className={`h-3 w-3 transition-transform ${subModeOpen ? "rotate-180" : ""}`} />
+            </motion.button>
+            {subModeOpen && (
+              <div className="absolute bottom-full left-0 mb-2 z-50 w-40 rounded-xl overflow-hidden"
+                style={{ background: "rgba(18,18,18,0.95)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 -8px 32px rgba(0,0,0,0.6)" }}
+              >
+                {(["general", "3d"] as const).map(m => (
+                  <button key={m} onClick={() => { onSubModeChange?.(m); setSubModeOpen(false); }}
+                    className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-white/90">{m === "3d" ? "3D Visualization" : "General"}</p>
+                        {m === "3d" && <span className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400">Beta</span>}
+                      </div>
+                      <p className="text-[11px] text-white/40">{m === "3d" ? "Experimental — try & share feedback" : "Text & math"}</p>
+                    </div>
+                    {subMode === m && <Check size={13} className="shrink-0 text-emerald-400" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Voice picker */}
-        <div ref={voiceRef} className="relative shrink-0">
+        <div ref={voiceRef} className={`relative shrink-0 ${disabled ? "opacity-30 pointer-events-none" : ""}`}>
           <motion.button
             type="button"
             whileTap={{ scale: 0.85 }}
@@ -235,7 +273,7 @@ export function BottomDock({
           </motion.button>
 
           {voiceOpen && (
-            <div className="absolute bottom-full right-0 mb-2 z-50 w-52 rounded-xl overflow-hidden"
+            <div className="absolute bottom-full right-0 mb-2 z-50 w-52 rounded-xl overflow-hidden max-sm:right-auto max-sm:left-0 max-sm:w-[min(208px,calc(100vw-32px))]"
               style={{
                 background: "rgba(18,18,18,0.95)",
                 backdropFilter: "blur(20px)",
@@ -254,28 +292,6 @@ export function BottomDock({
                   {selectedVoice === v.id && <Check size={13} className="shrink-0 text-emerald-400" />}
                 </button>
               ))}
-              <div className="border-t border-white/8" />
-              {!showCustom ? (
-                <button onClick={() => setShowCustom(true)}
-                  className="w-full px-3 py-2.5 text-left text-xs text-white/35 transition-colors hover:bg-white/8 hover:text-white/55"
-                >
-                  + Custom ElevenLabs voice ID
-                </button>
-              ) : (
-                <div className="px-3 py-2.5 space-y-2">
-                  <p className="text-[10px] text-white/35">Paste voice ID from elevenlabs.io</p>
-                  <div className="flex gap-1.5">
-                    <input autoFocus value={customId} onChange={e => setCustomId(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && applyCustom()}
-                      placeholder="pNInz6obpgDQGcFmaJgB"
-                      className="flex-1 rounded-md border border-white/10 bg-white/6 px-2 py-1 text-[11px] font-mono text-white/80 placeholder:text-white/20 outline-none"
-                    />
-                    <button onClick={applyCustom} disabled={!customId.trim()}
-                      className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-bold text-white disabled:opacity-30"
-                    >Use</button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

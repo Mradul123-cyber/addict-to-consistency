@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { CheckCircle2, XCircle, ChevronDown, ChevronUp, Loader2, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/admin/review/$jobId")({
-  head: () => ({ meta: [{ title: "Review Questions — JEE Console" }] }),
+  head: () => ({ meta: [{ title: "Review Questions — Matrix" }] }),
   component: ReviewPage,
 });
 

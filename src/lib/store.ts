@@ -12,6 +12,7 @@ import {
   setDoc,
   query,
   orderBy,
+  limit,
 } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -128,6 +129,22 @@ let unsubscribeCalendarTasks: (() => void) | null = null;
 
 const CACHE_PREFIX = "store_cache_";
 
+// ── Debounced tracks write — batches rapid concept toggles into 1 Firestore write ──
+let tracksWriteTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleTracksWrite(uid: string, updatedTracks: Track[]) {
+  if (tracksWriteTimer) clearTimeout(tracksWriteTimer);
+  tracksWriteTimer = setTimeout(async () => {
+    tracksWriteTimer = null;
+    try {
+      const { doc, setDoc } = await import("firebase/firestore");
+      const { db } = await import("./firebase");
+      await setDoc(doc(db, "users", uid, "tracks", "data"), { tracks: updatedTracks }, { merge: true });
+    } catch (err) {
+      console.error("Error saving tracks:", err);
+    }
+  }, 1500);
+}
+
 function loadCachedData(uid: string) {
   try {
     const cachedSessions = localStorage.getItem(`${CACHE_PREFIX}${uid}_sessions`);
@@ -203,7 +220,7 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
 
   // Subscribe to sessions collection
   const sessionsCol = collection(db, "users", uid, "sessions");
-  const q = query(sessionsCol, orderBy("createdAt", "asc"));
+  const q = query(sessionsCol, orderBy("createdAt", "desc"), limit(365));
   unsubscribeSessions = onSnapshot(
     q,
     (snapshot) => {
@@ -220,7 +237,7 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
           driftSummary: data.driftSummary,
           subject: data.subject,
         } as SessionLog;
-      });
+      }).reverse(); // restore chronological order for analytics
       refreshSnap();
       onStoreChange();
       saveCache(uid);
@@ -384,8 +401,7 @@ export async function setConceptWeight(chapterId: string, conceptId: string, wei
     tracks = updatedTracks;
     refreshSnap();
     emit();
-    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
-    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+    scheduleTracksWrite(uid, updatedTracks);
   } catch (err) {
     console.error("Error setting concept weight:", err);
   }
@@ -519,8 +535,8 @@ export async function toggleConcept(chapterId: string, conceptId: string) {
     refreshSnap();
     emit();
 
-    const tracksDocRef = doc(db, "users", uid, "tracks", "data");
-    await setDoc(tracksDocRef, { tracks: updatedTracks }, { merge: true });
+    // Debounced — batches rapid toggles into 1 write after 1.5s of inactivity
+    scheduleTracksWrite(uid, updatedTracks);
   } catch (err) {
     console.error("Error toggling concept:", err);
   }

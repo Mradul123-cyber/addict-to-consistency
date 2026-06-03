@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterPicker } from "./ChapterPicker";
@@ -48,8 +49,17 @@ function getCustomInfo(value: string, mode: PomodoroMode): { minutes: number; er
   return { minutes: parsed, error: null };
 }
 
-export function FocusTimer({ initialChapterId }: { initialChapterId?: string | null }) {
+export function FocusTimer({
+  initialChapterId,
+  onSubjectSelect,
+  chapterPanel,
+}: {
+  initialChapterId?: string | null;
+  onSubjectSelect?: (subjectName: string) => void;
+  chapterPanel?: React.ReactNode;
+}) {
   const { tracks } = useStore();
+  const navigate = useNavigate();
   const [chapterId, setChapterId] = useState<string | null>(initialChapterId ?? null);
   const { healthySites, blocklist, startFocusTracking, endFocusTracking } = useAirgap();
   const [mode, setMode] = useState<PomodoroMode>("focus");
@@ -200,13 +210,13 @@ export function FocusTimer({ initialChapterId }: { initialChapterId?: string | n
       if (document.hidden) {
         document.title = "⚠ Refocus — JEE Timer running";
       } else {
-        document.title = originalTitleRef.current || "JEE Console";
+        document.title = originalTitleRef.current || "Matrix";
       }
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
-      document.title = originalTitleRef.current || "JEE Console";
+      document.title = originalTitleRef.current || "Matrix";
     };
   }, [running]);
 
@@ -277,13 +287,22 @@ export function FocusTimer({ initialChapterId }: { initialChapterId?: string | n
             </div>
           )}
         </div>
-        <ChapterPicker value={chapterId} onChange={setChapterId} />
+        <ChapterPicker
+          value={chapterId}
+          onChange={(id) => {
+            setChapterId(id);
+            navigate({ to: "/focus", search: { subject: undefined }, replace: true });
+          }}
+          onSubjectSelect={onSubjectSelect}
+        />
         {!chapterId && (
           <p className="text-xs text-muted-foreground">
             No chapter selected — session won't be tagged.
           </p>
         )}
       </div>
+
+      {chapterPanel}
 
       <div className="flex rounded-lg bg-card p-1 gap-1">
         {(Object.entries(MODE_CONFIG) as [PomodoroMode, typeof MODE_CONFIG["focus"]][]).map(([key, cfg]) => (

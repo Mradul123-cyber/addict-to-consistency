@@ -20,10 +20,12 @@ import { Check, ChevronDown, Plus } from "lucide-react";
 export function ChapterPicker({
   value,
   onChange,
+  onSubjectSelect,
   placeholder = "Select or type a task…",
 }: {
   value: string | null;
   onChange: (id: string) => void;
+  onSubjectSelect?: (subjectName: string) => void;
   placeholder?: string;
 }) {
   const { tracks, customTasks } = useStore();
@@ -55,15 +57,31 @@ export function ChapterPicker({
   };
 
   const s = search.toLowerCase().trim();
-  const filteredChapters = !s
-    ? allChapters
-    : allChapters.filter((c) => c.name.toLowerCase().includes(s));
+
+  const SUBJECT_OPTIONS = ["Physics", "Chemistry", "Maths"];
+  
+  const filteredSubjects = onSubjectSelect
+    ? (!s
+      ? SUBJECT_OPTIONS
+      : SUBJECT_OPTIONS.filter((name) => name.toLowerCase().includes(s)))
+    : [];
+
+  const filteredChapters = onSubjectSelect
+    ? []
+    : (!s
+      ? allChapters
+      : allChapters.filter((c) => c.name.toLowerCase().includes(s)));
+
   const filteredCustomTasks = !s
     ? customTasks
     : customTasks.filter((t) => t.toLowerCase().includes(s));
 
-  const showAdd = s && !filteredChapters.some((c) => c.name.toLowerCase() === s) && !filteredCustomTasks.some((t) => t.toLowerCase() === s);
-  const hasItems = filteredChapters.length > 0 || filteredCustomTasks.length > 0;
+  const showAdd = s &&
+    !filteredChapters.some((c) => c.name.toLowerCase() === s) &&
+    !filteredCustomTasks.some((t) => t.toLowerCase() === s) &&
+    (!onSubjectSelect || !filteredSubjects.some((name) => name.toLowerCase() === s));
+
+  const hasItems = filteredChapters.length > 0 || filteredCustomTasks.length > 0 || filteredSubjects.length > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -91,6 +109,23 @@ export function ChapterPicker({
                 No tasks found
               </p>
             )}
+            {onSubjectSelect && filteredSubjects.length > 0 && (
+              <CommandGroup heading="Subjects">
+                {filteredSubjects.map((name) => (
+                  <CommandItem
+                    key={name}
+                    onSelect={() => {
+                      onSubjectSelect(name);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>{name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
             {filteredChapters.length > 0 && (
               <CommandGroup>
                 {filteredChapters.map((c) => (
@@ -116,7 +151,7 @@ export function ChapterPicker({
             )}
             {filteredCustomTasks.length > 0 && (
               <>
-                {filteredChapters.length > 0 && <CommandSeparator />}
+                {(filteredChapters.length > 0 || (onSubjectSelect && filteredSubjects.length > 0)) && <CommandSeparator />}
                 <CommandGroup heading="Custom Tasks">
                   {filteredCustomTasks.map((t) => (
                     <CommandItem
@@ -161,3 +196,4 @@ export function ChapterPicker({
     </Popover>
   );
 }
+

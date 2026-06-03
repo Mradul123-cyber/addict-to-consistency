@@ -21,7 +21,7 @@ import { NEVER_HEALTHY, useAirgap } from "@/hooks/useAirgap";
 export const Route = createFileRoute("/airgap")({
   head: () => ({
     meta: [
-      { title: "Airgap Shield — JEE Console" },
+      { title: "Airgap Shield — Matrix" },
       {
         name: "description",
         content:
@@ -174,7 +174,7 @@ function AirgapPage() {
             <div>
               <CardTitle className="text-base">Extension Control</CardTitle>
               <CardDescription>
-                Load the extension temporarily in Chrome or Firefox to enforce your saved rules in real time. See install instructions below.
+                Available on Chrome and Firefox. Install once to enforce your saved rules in real time.
               </CardDescription>
             </div>
             <Badge variant={isExtensionReady ? (isOn ? "default" : "outline") : "secondary"}>
@@ -315,11 +315,16 @@ function AirgapPage() {
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-muted-foreground">
-                Install or reload the extension to apply these rules in Chrome.
+                Install the extension to apply these rules in your browser.
               </p>
+              <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
+                <a href="https://chromewebstore.google.com/detail/airgap-shield/didhcfefeekjdhofimlkdgcjbcmhmgbo" target="_blank" rel="noreferrer">
+                  Add to Chrome
+                </a>
+              </Button>
               <Button asChild variant="outline" className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
-                <a href="/airgap-install.html" target="_blank" rel="noreferrer">
-                  Install instructions
+                <a href="https://addons.mozilla.org/en-US/firefox/addon/airgap-shield/" target="_blank" rel="noreferrer">
+                  Add to Firefox
                 </a>
               </Button>
             </div>

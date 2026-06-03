@@ -8,10 +8,13 @@ export const DAILY_GOAL_OPTIONS = [90, 120, 150, 180, 210, 240, 270, 300] as con
 export type JeeTargetYear = (typeof JEE_TARGET_YEARS)[number];
 export type DailyGoalMinutes = (typeof DAILY_GOAL_OPTIONS)[number];
 
+export type AppMode = "jee" | "professional";
+
 export interface UserProfile {
   targetYear: JeeTargetYear;
   dailyGoalMinutes: number;
   dailyGoalChangedAt?: number | null;
+  mode?: AppMode;
 }
 
 export function normalizeDailyGoalMinutes(value: unknown): number {
