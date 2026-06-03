@@ -23,6 +23,9 @@ dist-ssr
 # Worker source — deployed to Cloudflare separately, not needed for frontend hosting
 my-jee-worker/
 
+# Extension build zips — source code is open, compiled zips not needed in repo
+*.zip
+
 # Admin panel routes — UID-protected, kept private
 src/routes/admin/
 
