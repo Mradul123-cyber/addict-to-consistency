@@ -242,6 +242,30 @@ function normalizeSpeakText(text: string): string {
     .replace(/%/g, "percent");
 }
 
+// ── Prefetch concurrency semaphore ────────────────────────────────────────────
+// At most 2 TTS API calls in-flight at once. Extra calls queue and run as slots free.
+
+const PREFETCH_CONCURRENCY = 2;
+let _prefetchActive = 0;
+const _prefetchQueue: Array<() => void> = [];
+
+function acquirePrefetchSlot(): Promise<void> {
+  if (_prefetchActive < PREFETCH_CONCURRENCY) {
+    _prefetchActive++;
+    return Promise.resolve();
+  }
+  return new Promise<void>(resolve => _prefetchQueue.push(resolve));
+}
+
+function releasePrefetchSlot(): void {
+  const next = _prefetchQueue.shift();
+  if (next) {
+    next(); // hand slot directly to next waiter — active count stays the same
+  } else {
+    _prefetchActive--;
+  }
+}
+
 // ── Prefetch: fetch + cache audio without playing ─────────────────────────────
 // Fire-and-forget while current element plays. speakElement() hits cache instantly.
 
@@ -268,7 +292,10 @@ export async function prefetchAudio(
     return;
   }
 
+  await acquirePrefetchSlot();
   try {
+    // Re-check cache after waiting in queue — a prior prefetch may have filled it
+    if (memCache.has(key)) return;
     const response = await fetch(`${workerUrl}/api/tts`, {
       method: "POST",
       headers: {
@@ -283,6 +310,9 @@ export async function prefetchAudio(
     const audioBuffer = await getAudioCtx().decodeAudioData(rawBuffer);
     memCache.set(key, audioBuffer);
   } catch { /* non-fatal — speakElement will retry on play */ }
+  finally {
+    releasePrefetchSlot();
+  }
 }
 
 // ── Main speak function ───────────────────────────────────────────────────────

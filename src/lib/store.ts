@@ -167,24 +167,24 @@ function scheduleTracksWrite(uid: string, updatedTracks: Track[]) {
   }, 30 * 60 * 1000); // 30 min fallback — exit events (visibilitychange/beforeunload) handle the normal case
 }
 
-// Flush on tab hide — covers tab close, mobile backgrounding, navigation away
+// Single flush flag — prevents double write when both visibilitychange + beforeunload fire (e.g. refresh)
+let flushing = false;
+
+function flushOnce() {
+  if (flushing || !pendingTracksWrite) return;
+  flushing = true;
+  if (tracksWriteTimer) { clearTimeout(tracksWriteTimer); tracksWriteTimer = null; }
+  void flushTracksWrite().finally(() => { flushing = false; });
+}
+
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden" && pendingTracksWrite) {
-      if (tracksWriteTimer) { clearTimeout(tracksWriteTimer); tracksWriteTimer = null; }
-      void flushTracksWrite();
-    }
+    if (document.visibilityState === "hidden") flushOnce();
   });
 }
 
-// Flush on refresh (F5/Ctrl+R) — beforeunload fires where visibilitychange doesn't
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    if (pendingTracksWrite) {
-      if (tracksWriteTimer) { clearTimeout(tracksWriteTimer); tracksWriteTimer = null; }
-      void flushTracksWrite();
-    }
-  });
+  window.addEventListener("beforeunload", () => flushOnce());
 }
 
 function loadCachedData(uid: string) {
