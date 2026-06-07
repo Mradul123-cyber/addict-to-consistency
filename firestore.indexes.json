@@ -125,31 +125,6 @@
         { "fieldPath": "userId", "mode": "ASCENDING" },
         { "fieldPath": "submittedAt", "mode": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "contentUploads",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status", "mode": "ASCENDING" },
-        { "fieldPath": "createdAt", "mode": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "contentUploads",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "uploadedBy", "mode": "ASCENDING" },
-        { "fieldPath": "createdAt", "mode": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "contentUploads",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "subject", "mode": "ASCENDING" },
-        { "fieldPath": "contentType", "mode": "ASCENDING" },
-        { "fieldPath": "status", "mode": "ASCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
