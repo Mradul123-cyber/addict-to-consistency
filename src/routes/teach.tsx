@@ -32,7 +32,7 @@ import { ModeSelector, getModeConfig } from "@/components/teach/ModeSelector";
 import { CanvasToolbar } from "@/components/teach/CanvasToolbar";
 import type { TeachMode, SubMode, CanvasTool, CanvasOverlayHandle } from "@/types/teach";
 import { CANVAS_BRUSH_SIZE_DEFAULT } from "@/types/teach";
-import { createTeachSession, appendSessionElements, updateSessionTitle, updateSessionElement, loadSessionElements, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
+import { createTeachSession, saveSessionElements, updateSessionMetadata, updateSessionTitle, updateSessionElement, loadSessionElements, deleteTeachSession, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
 import { setReplayMode } from "@/lib/tts";
 import { checkDeviceAllowed, registerDeviceUsage } from "@/lib/device-guard";
 import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
@@ -1048,35 +1048,38 @@ function TeachPage() {
   const saveSession = useCallback(async (sessionTitle?: string) => {
     const uid = user?.uid;
     if (!uid) return;
+    const idToken = await user!.getIdToken();
     const sessionId = currentSessionIdRef.current ?? nanoid();
-    const newElements = elementsRef.current.slice(savedElementCountRef.current);
+    const allElements = elementsRef.current;
+
+    // Save all elements to R2 (1 write regardless of element count)
+    await saveSessionElements(uid, sessionId, allElements, idToken);
+
     if (!currentSessionIdRef.current) {
       const now = Date.now();
       const newSession: TeachSession = {
         id: sessionId,
-        title: sessionTitle,
+        title: sessionTitle ?? "",
         mode: modeRef.current ?? "jee",
         subMode: subModeRef.current !== "general" ? subModeRef.current : undefined,
         createdAt: now,
         updatedAt: now,
-        elementCount: elementsRef.current.length,
+        elementCount: allElements.length,
       };
-      await createTeachSession(uid, sessionId, sessionTitle, [], modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
-      await appendSessionElements(uid, sessionId, elementsRef.current, 0);
-      savedElementCountRef.current = elementsRef.current.length;
+      // Create Firestore metadata doc (1 write)
+      await createTeachSession(uid, sessionId, sessionTitle ?? "", allElements.length, modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
+      savedElementCountRef.current = allElements.length;
       setCurrentSessionId(sessionId);
       preloadedSessionsRef.current = [newSession, ...preloadedSessionsRef.current];
     } else {
-      if (newElements.length > 0) {
-        await appendSessionElements(uid, sessionId, newElements, savedElementCountRef.current);
-        savedElementCountRef.current = elementsRef.current.length;
-      }
-      if (sessionTitle) await updateSessionTitle(uid, sessionId, sessionTitle);
+      // Update Firestore metadata (1 write)
+      await updateSessionMetadata(uid, sessionId, allElements.length, sessionTitle);
+      savedElementCountRef.current = allElements.length;
       preloadedSessionsRef.current = preloadedSessionsRef.current.map(s =>
-        s.id === sessionId ? { ...s, ...(sessionTitle ? { title: sessionTitle } : {}), updatedAt: Date.now() } : s
+        s.id === sessionId ? { ...s, ...(sessionTitle ? { title: sessionTitle } : {}), updatedAt: Date.now(), elementCount: allElements.length } : s
       );
     }
-  }, [user?.uid]);
+  }, [user]);
 
   // ── Replay current board ─────────────────────────────────────────────────
   const doReplay = useCallback(async () => {
@@ -1279,7 +1282,8 @@ function TeachPage() {
       elementsRef.current = [];
 
       setBoardInstant(true);
-      const loaded = await loadSessionElements(user.uid, session.id);
+      const idToken = await user.getIdToken();
+      const loaded = await loadSessionElements(user.uid, session.id, idToken);
       elementsRef.current = loaded;
       setElements(loaded);
       savedElementCountRef.current = session.elementCount ?? loaded.length;

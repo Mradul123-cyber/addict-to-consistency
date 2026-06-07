@@ -1,8 +1,10 @@
 import {
   collection, doc, setDoc, getDocs, deleteDoc,
-  updateDoc, writeBatch, query, orderBy, limit, startAfter, where,
+  updateDoc, writeBatch, query, orderBy, limit, startAfter, getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
 
 // v2 schema: session doc = metadata only, elements live in subcollection
 // Old sessions (v1, had elements[]) are ignored — no backward compat
@@ -25,13 +27,29 @@ function elementsRef(uid: string, sessionId: string) {
   return collection(db, "users", uid, "teachSessions", sessionId, "elements");
 }
 
-// ── Create session (metadata only) ───────────────────────────────────────────
+// ── R2 session element storage ────────────────────────────────────────────────
+
+export async function saveSessionElements(
+  uid: string,
+  sessionId: string,
+  elements: any[],
+  idToken: string,
+): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/api/session/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+    body: JSON.stringify({ sessionId, elements }),
+  });
+  if (!res.ok) throw new Error(`R2 session save failed: ${res.status}`);
+}
+
+// ── Create session metadata in Firestore ──────────────────────────────────────
 
 export async function createTeachSession(
   uid: string,
   sessionId: string,
   title: string,
-  _elements: any[], // ignored — elements written separately via appendSessionElements
+  elementCount: number,
   mode?: string,
   subMode?: string,
 ): Promise<void> {
@@ -41,39 +59,24 @@ export async function createTeachSession(
     ...(subMode ? { subMode } : {}),
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    elementCount: 0,
-    v2: true,
+    elementCount,
+    storageType: "r2",
   });
 }
 
-// ── Append only new elements to subcollection ────────────────────────────────
-// Each element doc uses its nanoid as Firestore doc ID → idempotent on retry
+// ── Update session metadata after each response ───────────────────────────────
 
-export async function appendSessionElements(
+export async function updateSessionMetadata(
   uid: string,
   sessionId: string,
-  elements: any[],
-  startIndex: number,
+  elementCount: number,
+  title?: string,
 ): Promise<void> {
-  if (elements.length === 0) return;
-  // Firestore batches cap at 500 ops; split into chunks of 498 to leave room for the metadata update
-  const CHUNK = 498;
-  for (let offset = 0; offset < elements.length; offset += CHUNK) {
-    const chunk = elements.slice(offset, offset + CHUNK);
-    const batch = writeBatch(db);
-    chunk.forEach((el, i) => {
-      const ref = doc(elementsRef(uid, sessionId), el.id);
-      batch.set(ref, { ...el, index: startIndex + offset + i });
-    });
-    const isLastChunk = offset + CHUNK >= elements.length;
-    if (isLastChunk) {
-      batch.update(doc(sessionsRef(uid), sessionId), {
-        updatedAt: Date.now(),
-        elementCount: startIndex + elements.length,
-      });
-    }
-    await batch.commit();
-  }
+  await updateDoc(doc(sessionsRef(uid), sessionId), {
+    updatedAt: Date.now(),
+    elementCount,
+    ...(title ? { title: title.slice(0, 80) } : {}),
+  });
 }
 
 // ── Update session title ──────────────────────────────────────────────────────
@@ -100,12 +103,25 @@ export async function updateSessionElement(
   await updateDoc(ref, { ...element });
 }
 
-// ── Load all elements for a session ──────────────────────────────────────────
+// ── Load elements — R2 for new sessions, Firestore subcollection for old ──────
 
 export async function loadSessionElements(
   uid: string,
   sessionId: string,
+  idToken: string,
 ): Promise<any[]> {
+  // Try R2 first (new sessions)
+  try {
+    const res = await fetch(`${WORKER_URL}/api/session/load?sessionId=${sessionId}`, {
+      headers: { "Authorization": `Bearer ${idToken}` },
+    });
+    if (res.ok) return await res.json() as any[];
+    if (res.status !== 404) throw new Error(`R2 load failed: ${res.status}`);
+  } catch (e) {
+    console.warn("[Session] R2 load failed, falling back to Firestore", e);
+  }
+
+  // Fallback: old v2 sessions stored in Firestore subcollection
   const q = query(elementsRef(uid, sessionId), orderBy("index", "asc"));
   const snap = await getDocs(q);
   return snap.docs.map(d => d.data());
@@ -155,14 +171,25 @@ export async function renameTeachSession(
 export async function deleteTeachSession(
   uid: string,
   sessionId: string,
+  idToken: string,
 ): Promise<void> {
-  // Elements subcollection must be deleted separately (Firestore client can't cascade)
-  // Fetch and delete element docs first
+  // Delete from R2 (new sessions) — non-fatal if not found
+  try {
+    await fetch(`${WORKER_URL}/api/session/delete?sessionId=${sessionId}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${idToken}` },
+    });
+  } catch (e) {
+    console.warn("[Session] R2 delete failed", e);
+  }
+
+  // Delete old Firestore subcollection elements if any (old v2 sessions)
   const snap = await getDocs(elementsRef(uid, sessionId));
   if (snap.docs.length > 0) {
     const batch = writeBatch(db);
     snap.docs.forEach(d => batch.delete(d.ref));
     await batch.commit();
   }
+
   await deleteDoc(doc(sessionsRef(uid), sessionId));
 }

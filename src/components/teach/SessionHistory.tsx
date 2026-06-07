@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   listTeachSessionsPaged, renameTeachSession, deleteTeachSession,
   type TeachSession,
@@ -31,6 +32,7 @@ function formatDate(ts: number) {
 }
 
 export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSession, preloadedSessions = [] }: SessionHistoryProps) {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState<TeachSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -102,9 +104,10 @@ export function SessionHistory({ open, onClose, uid, currentSessionId, onLoadSes
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !user) return;
     try {
-      await deleteTeachSession(uid, deleteTarget.id);
+      const idToken = await user.getIdToken();
+      await deleteTeachSession(uid, deleteTarget.id, idToken);
       setSessions(prev => prev.filter(s => s.id !== deleteTarget.id));
       toast.success("Session deleted");
     } catch {
