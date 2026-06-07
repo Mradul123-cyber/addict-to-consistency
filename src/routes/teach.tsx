@@ -32,7 +32,7 @@ import { ModeSelector, getModeConfig } from "@/components/teach/ModeSelector";
 import { CanvasToolbar } from "@/components/teach/CanvasToolbar";
 import type { TeachMode, SubMode, CanvasTool, CanvasOverlayHandle } from "@/types/teach";
 import { CANVAS_BRUSH_SIZE_DEFAULT } from "@/types/teach";
-import { createTeachSession, saveSessionElements, updateSessionMetadata, updateSessionTitle, updateSessionElement, loadSessionElements, deleteTeachSession, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
+import { createTeachSession, saveSessionElements, updateSessionMetadata, updateSessionTitle, loadSessionElements, deleteTeachSession, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
 import { setReplayMode } from "@/lib/tts";
 import { checkDeviceAllowed, registerDeviceUsage } from "@/lib/device-guard";
 import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
@@ -1688,9 +1688,10 @@ function TeachPage() {
                   setElements(prev => prev.map(fixEl));
                   elementsRef.current = elementsRef.current.map(fixEl);
                   const sess = currentSessionId;
-                  if (sess && user?.uid) {
-                    const edited = elementsRef.current.find(e => e.id === id);
-                    if (edited) void updateSessionElement(user.uid, sess, edited);
+                  if (sess && user) {
+                    user.getIdToken().then(tok =>
+                      saveSessionElements(user.uid, sess, elementsRef.current, tok)
+                    ).catch(() => {});
                   }
                 }}
                 instant={boardInstant}

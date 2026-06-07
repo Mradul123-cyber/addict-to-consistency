@@ -1,13 +1,10 @@
 import {
   collection, doc, setDoc, getDocs, deleteDoc,
-  updateDoc, writeBatch, query, orderBy, limit, startAfter, getDoc,
+  updateDoc, query, orderBy, limit, startAfter,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
-
-// v2 schema: session doc = metadata only, elements live in subcollection
-// Old sessions (v1, had elements[]) are ignored — no backward compat
 
 export interface TeachSession {
   id: string;
@@ -21,10 +18,6 @@ export interface TeachSession {
 
 function sessionsRef(uid: string) {
   return collection(db, "users", uid, "teachSessions");
-}
-
-function elementsRef(uid: string, sessionId: string) {
-  return collection(db, "users", uid, "teachSessions", sessionId, "elements");
 }
 
 // ── R2 session element storage ────────────────────────────────────────────────
@@ -43,7 +36,19 @@ export async function saveSessionElements(
   if (!res.ok) throw new Error(`R2 session save failed: ${res.status}`);
 }
 
-// ── Create session metadata in Firestore ──────────────────────────────────────
+export async function loadSessionElements(
+  uid: string,
+  sessionId: string,
+  idToken: string,
+): Promise<any[]> {
+  const res = await fetch(`${WORKER_URL}/api/session/load?sessionId=${sessionId}`, {
+    headers: { "Authorization": `Bearer ${idToken}` },
+  });
+  if (!res.ok) throw new Error(`R2 session load failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Firestore session metadata ────────────────────────────────────────────────
 
 export async function createTeachSession(
   uid: string,
@@ -64,8 +69,6 @@ export async function createTeachSession(
   });
 }
 
-// ── Update session metadata after each response ───────────────────────────────
-
 export async function updateSessionMetadata(
   uid: string,
   sessionId: string,
@@ -79,8 +82,6 @@ export async function updateSessionMetadata(
   });
 }
 
-// ── Update session title ──────────────────────────────────────────────────────
-
 export async function updateSessionTitle(
   uid: string,
   sessionId: string,
@@ -92,42 +93,7 @@ export async function updateSessionTitle(
   });
 }
 
-// ── Update a single element (for inline board edits) ─────────────────────────
-
-export async function updateSessionElement(
-  uid: string,
-  sessionId: string,
-  element: any,
-): Promise<void> {
-  const ref = doc(elementsRef(uid, sessionId), element.id);
-  await updateDoc(ref, { ...element });
-}
-
-// ── Load elements — R2 for new sessions, Firestore subcollection for old ──────
-
-export async function loadSessionElements(
-  uid: string,
-  sessionId: string,
-  idToken: string,
-): Promise<any[]> {
-  // Try R2 first (new sessions)
-  try {
-    const res = await fetch(`${WORKER_URL}/api/session/load?sessionId=${sessionId}`, {
-      headers: { "Authorization": `Bearer ${idToken}` },
-    });
-    if (res.ok) return await res.json() as any[];
-    if (res.status !== 404) throw new Error(`R2 load failed: ${res.status}`);
-  } catch (e) {
-    console.warn("[Session] R2 load failed, falling back to Firestore", e);
-  }
-
-  // Fallback: old v2 sessions stored in Firestore subcollection
-  const q = query(elementsRef(uid, sessionId), orderBy("index", "asc"));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => d.data());
-}
-
-// ── List sessions (v2 only — old sessions filtered out) ──────────────────────
+// ── List sessions ─────────────────────────────────────────────────────────────
 
 export interface TeachSessionPage {
   sessions: TeachSession[];
@@ -145,10 +111,9 @@ export async function listTeachSessionsPaged(
     ? query(...base, startAfter(afterUpdatedAt), limit(pageSize))
     : query(...base, limit(pageSize));
   const snap = await getDocs(q);
-  // Filter client-side: v2 sessions have the v2 flag; old sessions have elements[]
   const sessions = snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
-    .filter(s => (s as any).v2 === true) as TeachSession[];
+    .filter(s => (s as any).storageType === "r2") as TeachSession[];
   return {
     sessions,
     hasMore: snap.docs.length === pageSize,
@@ -173,23 +138,11 @@ export async function deleteTeachSession(
   sessionId: string,
   idToken: string,
 ): Promise<void> {
-  // Delete from R2 (new sessions) — non-fatal if not found
-  try {
-    await fetch(`${WORKER_URL}/api/session/delete?sessionId=${sessionId}`, {
+  await Promise.all([
+    fetch(`${WORKER_URL}/api/session/delete?sessionId=${sessionId}`, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${idToken}` },
-    });
-  } catch (e) {
-    console.warn("[Session] R2 delete failed", e);
-  }
-
-  // Delete old Firestore subcollection elements if any (old v2 sessions)
-  const snap = await getDocs(elementsRef(uid, sessionId));
-  if (snap.docs.length > 0) {
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-  }
-
-  await deleteDoc(doc(sessionsRef(uid), sessionId));
+    }).catch(e => console.warn("[Session] R2 delete failed", e)),
+    deleteDoc(doc(sessionsRef(uid), sessionId)),
+  ]);
 }
