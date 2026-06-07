@@ -404,6 +404,9 @@ function TeachPage() {
     try { return (localStorage.getItem("teach-language") as "english" | "hinglish" | "hindi") ?? "english"; } catch { return "english"; }
   });
   const languageRef = useRef(language);
+  // Locked to the language at the START of each stream — prevents mid-drain voice mismatch
+  // when user switches language while elements from the previous response are still playing.
+  const drainLanguageRef = useRef(language);
   useEffect(() => { languageRef.current = language; }, [language]);
   const handleLanguageChange = useCallback((l: "english" | "hinglish" | "hindi") => {
     setLanguage(l);
@@ -632,12 +635,12 @@ function TeachPage() {
 
           const speakText = next.speak ?? ("content" in next ? next.content : "");
           const usingFallback = !next.speak && "content" in next;
-          if (languageRef.current !== "english") {
-            console.log(`[TTS] type=${next.type} | fallback=${usingFallback} | lang=${languageRef.current} | text="${speakText.slice(0, 80)}"`);
+          if (drainLanguageRef.current !== "english") {
+            console.log(`[TTS] type=${next.type} | fallback=${usingFallback} | lang=${drainLanguageRef.current} | text="${speakText.slice(0, 80)}"`);
           }
           const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
           const speakToken = shouldSpeak && user ? await user.getIdToken() : null;
-          const speakPromise = shouldSpeak ? speakElement(speakText, speakToken, speedRef.current, languageRef.current) : Promise.resolve();
+          const speakPromise = shouldSpeak ? speakElement(speakText, speakToken, speedRef.current, drainLanguageRef.current) : Promise.resolve();
 
           // Pipeline: pre-fetch next element's audio while current plays (all languages)
           if (ttsEnabledRef.current && speakToken) {
@@ -645,7 +648,7 @@ function TeachPage() {
             if (nextEl) {
               const nextSpeak = nextEl.speak ?? ("content" in nextEl ? nextEl.content : "");
               if (nextSpeak.trim() && nextEl.type !== "ai_divider") {
-                void prefetchAudio(nextSpeak, speakToken, languageRef.current);
+                void prefetchAudio(nextSpeak, speakToken, drainLanguageRef.current);
               }
             }
           }
@@ -706,6 +709,7 @@ function TeachPage() {
       requestAttachments: UploadedAttachment[] = []
     ) => {
       setBoardInstant(false);
+      drainLanguageRef.current = languageRef.current; // lock language for this entire response
       const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
       try {
         // Get fresh Firebase ID token for server-side auth verification
@@ -804,7 +808,7 @@ function TeachPage() {
                   if (ttsEnabledRef.current && el.type !== "ai_divider") {
                     const elSpeak = (el as any).speak ?? ("content" in el ? (el as any).content : "");
                     if (elSpeak?.trim()) {
-                      user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, languageRef.current)).catch(() => {});
+                      user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, drainLanguageRef.current)).catch(() => {});
                     }
                   }
                   void drainNext();
@@ -828,7 +832,7 @@ function TeachPage() {
               if (ttsEnabledRef.current && el.type !== "ai_divider") {
                 const elSpeak = (el as any).speak ?? ("content" in el ? (el as any).content : "");
                 if (elSpeak?.trim()) {
-                  user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, languageRef.current)).catch(() => {});
+                  user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, drainLanguageRef.current)).catch(() => {});
                 }
               }
               void drainNext();
@@ -1003,10 +1007,11 @@ function TeachPage() {
           });
         }
         try {
-          // Worker already incremented Firestore — update local UI state only
+          // Worker already incremented Firestore — update local UI state + sessionStorage cache
           const next = promptCountRef.current + 1;
           setPromptCount(next);
           promptCountRef.current = next;
+          try { sessionStorage.setItem(`quota_${uid}`, String(next)); } catch {}
           const remainingAfter = TEACH_PROMPT_LIMIT - next;
           if (next >= TEACH_PROMPT_LIMIT) {
             setFeedbackOpen(true);
@@ -1884,6 +1889,8 @@ function TeachPage() {
           onLanguageChange={handleLanguageChange}
           boardLanguage={boardLanguage}
           onBoardLanguageChange={handleBoardLanguageChange}
+          isLanguageLocked={elements.length > 0}
+          onNewSession={handleNewSession}
           showSubMode={mode === "jee" || mode === "neet"}
           onSubModeChange={(m) => {
             if (m === subMode) return;

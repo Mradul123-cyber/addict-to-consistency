@@ -243,7 +243,7 @@ function normalizeSpeakText(text: string): string {
 }
 
 // ── Prefetch concurrency semaphore ────────────────────────────────────────────
-// At most 2 TTS API calls in-flight at once. Extra calls queue and run as slots free.
+// At most 2 TTS prefetch calls in-flight at once. Extra calls queue and run as slots free.
 
 const PREFETCH_CONCURRENCY = 2;
 let _prefetchActive = 0;

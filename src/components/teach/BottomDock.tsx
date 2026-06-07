@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, AudioLines, LayoutGrid, ChevronDown, Check, Loader2, Play, Square, PencilLine } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
 import { PRESET_VOICES, HINGLISH_VOICES, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId } from "@/lib/tts";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 export function BottomDock({
   inputState,
@@ -19,6 +20,8 @@ export function BottomDock({
   onLanguageChange,
   boardLanguage = "english",
   onBoardLanguageChange,
+  isLanguageLocked = false,
+  onNewSession,
   isLoggedIn = false,
   isCanvasActive = false,
   onToggleCanvas,
@@ -30,6 +33,7 @@ export function BottomDock({
   const recognitionRef = useRef<any>(null);
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState<"voice" | "language" | "board" | null>(null);
+  const [langLockDialogOpen, setLangLockDialogOpen] = useState(false);
   const [subModeOpen, setSubModeOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
   const [selectedHinglishVoice, setSelectedHinglishVoice] = useState(getSavedHinglishVoiceId);
@@ -161,6 +165,7 @@ export function BottomDock({
   };
 
   return (
+    <>
     <motion.div
       className="pointer-events-none fixed bottom-5 left-0 right-0 z-[60] flex justify-center px-2 sm:px-4"
       initial={{ y: 28, opacity: 0 }}
@@ -394,7 +399,7 @@ export function BottomDock({
 
               {/* Language */}
               <button
-                onClick={() => setHovered(h => h === "language" ? null : "language")}
+                onClick={() => isLanguageLocked ? setLangLockDialogOpen(true) : setHovered(h => h === "language" ? null : "language")}
                 className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
               >
                 <div className="flex items-center gap-2">
@@ -428,7 +433,7 @@ export function BottomDock({
 
               {/* Board */}
               <button
-                onClick={() => setHovered(h => h === "board" ? null : "board")}
+                onClick={() => isLanguageLocked ? setLangLockDialogOpen(true) : setHovered(h => h === "board" ? null : "board")}
                 className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
               >
                 <div className="flex items-center gap-2">
@@ -505,5 +510,23 @@ export function BottomDock({
         </motion.button>
       </div>
     </motion.div>
+
+    <AlertDialog open={langLockDialogOpen} onOpenChange={setLangLockDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Language is locked for this session</AlertDialogTitle>
+          <AlertDialogDescription>
+            Language and board settings can't be changed mid-session. Start a new session to use a different language.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => { setLangLockDialogOpen(false); setOpen(false); onNewSession?.(); }}>
+            New Session
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

@@ -293,6 +293,8 @@ export interface BottomDockProps {
   onLanguageChange?: (l: TeachLanguage) => void;
   boardLanguage?: TeachLanguage;
   onBoardLanguageChange?: (l: TeachLanguage) => void;
+  isLanguageLocked?: boolean;
+  onNewSession?: () => void;
   isLoggedIn?: boolean;
   // Canvas
   isCanvasActive?: boolean;
