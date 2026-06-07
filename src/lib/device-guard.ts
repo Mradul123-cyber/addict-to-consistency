@@ -72,8 +72,10 @@ export async function generateDeviceId(): Promise<string> {
 export async function checkDeviceAllowed(uid: string): Promise<{ allowed: boolean }> {
   // Check sessionStorage first — avoids Firestore read within the same browser session
   const cacheKey = `device_allowed_${uid}`;
-  const cached = sessionStorage.getItem(cacheKey);
-  if (cached !== null) return { allowed: cached === "true" };
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached !== null) return { allowed: cached === "true" };
+  } catch { /* sessionStorage unavailable — fall through to Firestore */ }
 
   try {
     const deviceId = await generateDeviceId();
@@ -89,8 +91,13 @@ export async function checkDeviceAllowed(uid: string): Promise<{ allowed: boolea
 
     sessionStorage.setItem(cacheKey, String(allowed));
     return { allowed };
-  } catch {
-    return { allowed: true };
+  } catch (e: any) {
+    // permission-denied = document exists but our UID isn't in it = device is full
+    if (e?.code === "permission-denied") {
+      sessionStorage.setItem(cacheKey, "false");
+      return { allowed: false };
+    }
+    return { allowed: true }; // network errors: fail open
   }
 }
 

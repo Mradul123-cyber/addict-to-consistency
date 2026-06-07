@@ -16,7 +16,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAirgap } from "@/hooks/useAirgap";
 import { useTheme } from "@/hooks/useTheme";
 import { useNotesChrome } from "@/contexts/NotesChromeContext";
-import { useAdmin } from "@/contexts/AdminContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +44,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Bookmark, ChevronDown, ClipboardList, Download, LogOut, Menu, Moon, Shield, ShieldCheck, Sparkles, Sun, Target, X } from "lucide-react";
+import { Bookmark, ChevronDown, ClipboardList, Download, LogOut, Menu, Moon, Shield, Sparkles, Sun, Target, X } from "lucide-react";
 import { isInstalledPwa, subscribePwaInstall, triggerInstallPrompt } from "@/lib/pwa-install";
 
 /** Chromium PWA install prompt (not available on iOS Safari). */
@@ -92,7 +91,6 @@ function getInitials(name: string | null, email: string | null): string {
 
 export function AppNav() {
   useStore();
-  const { isAdmin } = useAdmin();
   const { profile, targetDate, saveDailyGoalMinutes, saveProfile } = useProfile();
   const isPro = profile?.mode === "professional";
   const links = isPro ? PRO_LINKS : JEE_LINKS;
@@ -430,15 +428,6 @@ export function AppNav() {
                   </DropdownMenuItem>
                 )}
 
-
-                {isAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/admin/upload" className="cursor-pointer">
-                      <ShieldCheck className="mr-2 h-4 w-4" />
-                      Admin Upload
-                    </Link>
-                  </DropdownMenuItem>
-                )}
 
                 <DropdownMenuSeparator />
 

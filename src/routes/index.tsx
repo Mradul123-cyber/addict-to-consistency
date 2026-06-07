@@ -378,7 +378,7 @@ function Dashboard() {
             {digestOpen ? "Hide digest" : "Weekly Digest"}
           </Button>
           <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
-            <Link to="/focus">Start focus session</Link>
+            <Link to="/focus" search={{ subject: "" }}>Start focus session</Link>
           </Button>
         </div>
       </div>

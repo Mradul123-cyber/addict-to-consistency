@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useState } from "react";
-import { addSession, deleteSession, useStore } from "@/lib/store";
+import { addSession, deleteSession, useStore, type SessionLog } from "@/lib/store";
 import { isoDay } from "@/lib/analytics";
 import { ChapterPicker } from "@/components/ChapterPicker";
 import { Button } from "@/components/ui/button";

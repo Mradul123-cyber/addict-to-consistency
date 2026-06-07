@@ -1,6 +1,6 @@
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, AlertTriangle, Lightbulb } from "lucide-react";
+import { Sparkles, AlertTriangle, Lightbulb, Volume2, Square, RotateCcw } from "lucide-react";
 // Global flag — when true, all TypewriterText instances instantly complete
 const typewriterStopFlag = { current: false };
 export function stopAllTypewriters() {
@@ -9,7 +9,7 @@ export function stopAllTypewriters() {
 }
 
 import type { ReactNode } from "react";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, Fragment } from "react";
 import { sceneRegistry } from "./sceneRegistry";
 export function captureScene(sceneId: string): string | null {
   return sceneRegistry.get(sceneId)?.capture() ?? null;
@@ -59,8 +59,11 @@ function renderBoldText(text: string, keyPrefix: string) {
   });
 }
 
-// Matches: \(...\) delimited math OR naked subscript/superscript like N_A(0), e^(-t), lambda_B
-const INLINE_MATH_RE = /(\\\(.+?\\\)|[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}()\-+]+)+)/g;
+// Matches:
+// 1. \(...\) delimited math
+// 2. Naked subscript/superscript: N_A(0), e^(-t), lambda_B
+// 3. LaTeX commands: \propto, \frac{1}{\lambda^4}, \alpha, \vec{F}
+const INLINE_MATH_RE = /(\\\(.+?\\\)|\\[a-zA-Z]+(?:\{(?:[^{}]|\{[^{}]*\})*\})*(?:[_^][A-Za-z0-9{}]+)*|[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}()\-+]+)+)/g;
 
 function renderInlineContent(text: string) {
   const parts = text.split(INLINE_MATH_RE);
@@ -71,7 +74,12 @@ function renderInlineContent(text: string) {
     if (part.startsWith("\\(") && part.endsWith("\\)")) {
       return <InlineMath key={key} math={part.slice(2, -2)} />;
     }
-    // Naked subscript/superscript — render as inline KaTeX
+    // LaTeX command: \propto, \frac{1}{\lambda^4}, \alpha etc.
+    if (/^\\[a-zA-Z]/.test(part)) {
+      try { return <InlineMath key={key} math={part} />; }
+      catch { return renderBoldText(part, key); }
+    }
+    // Naked subscript/superscript: N_A(0), e^(-t)
     if (/^[A-Za-z][A-Za-z0-9]*(?:[_^][A-Za-z0-9{}()\-+]+)+$/.test(part)) {
       try { return <InlineMath key={key} math={part} />; }
       catch { return renderBoldText(part, key); }
@@ -87,9 +95,12 @@ function PlainText({ text }: { text: string }) {
 function TypewriterText({ text, isBlackboard, instant }: { text: string; isBlackboard: boolean; instant?: boolean }) {
   const [displayed, setDisplayed] = useState(instant ? text : "");
   const [done, setDone] = useState(instant ?? false);
+  const instantDoneRef = useRef(instant ?? false);
 
   useEffect(() => {
-    if (instant) { setDisplayed(text); setDone(true); return; }
+    if (instant) { setDisplayed(text); setDone(true); instantDoneRef.current = true; return; }
+    // If this instance was already completed via instant-render, don't restart animation
+    if (instantDoneRef.current) return;
     setDisplayed("");
     setDone(false);
     let active = true;
@@ -941,6 +952,74 @@ function CheckpointInput({ isBlackboard, onSubmit }: CheckpointInputProps) {
   );
 }
 
+// ─── Per-element speak button ─────────────────────────────────────────────────
+
+function SpeakBtn({
+  el,
+  speakText: speakTextOverride,
+  alwaysVisible,
+  showSpeakButtons,
+  speakingElementId,
+  onSpeakElement,
+  isBlackboard,
+}: {
+  el: BoardElement;
+  speakText?: string;
+  alwaysVisible?: boolean;
+  showSpeakButtons: boolean;
+  speakingElementId: string | null | undefined;
+  onSpeakElement: ((speak: string, id: string) => void) | undefined;
+  isBlackboard: boolean;
+}) {
+  const speak = speakTextOverride ?? (el as any).speak ?? ("content" in el ? (el as any).content : "");
+  if (!speak?.trim() || !onSpeakElement) return null;
+  if (!alwaysVisible && !showSpeakButtons) return null;
+  const isPlaying = speakingElementId === el.id;
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onSpeakElement(speak, el.id); }}
+      title={isPlaying ? "Stop" : "Replay this"}
+      className={`flex items-center justify-center w-5 h-5 rounded-full transition-all duration-200 ${
+        isBlackboard
+          ? isPlaying
+            ? "text-emerald-400 bg-emerald-500/20"
+            : "text-white/45 hover:text-white hover:bg-white/12"
+          : isPlaying
+            ? "text-emerald-600 bg-emerald-100"
+            : "text-black/35 hover:text-black hover:bg-black/8"
+      }`}
+    >
+      {isPlaying ? <Square size={8} className="fill-current" /> : <Volume2 size={11} />}
+    </button>
+  );
+}
+
+// Wraps content with a left speak-button column that animates width 0↔28px.
+// CSS-only show/hide — never unmounts children, preventing TypewriterText re-animation.
+function SpeakBtnWrap({
+  show,
+  btn,
+  topPt = "pt-1",
+  children,
+}: {
+  show: boolean;
+  btn: ReactNode;
+  topPt?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start">
+      <div
+        className={`shrink-0 overflow-hidden ${topPt} flex justify-center`}
+        style={{ width: show ? 28 : 0, transition: "width 150ms ease" }}
+      >
+        {btn}
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
 // ─── Render-list grouping ─────────────────────────────────────────────────────
 
 type RenderItem =
@@ -975,7 +1054,323 @@ export interface BoardRendererProps {
   onCheckpointAnswer: (answer: string) => void;
   optionAnswers: Record<string, string>;
   onOptionSelect: (groupId: string, label: string) => void;
+  onFixElement?: (id: string, newContent: string) => void;
   instant?: boolean;
+  showSpeakButtons?: boolean;
+  speakingElementId?: string | null;
+  onSpeakElement?: (speak: string, id: string) => void;
+  onSpeakBlock?: (items: Array<{ speak: string; id: string }>) => void;
+  onStopBlock?: () => void;
+}
+
+// Regex layer: fix control-char corruptions from JSON \f \n \t \b \r eaten as escape sequences
+function regexFixMath(text: string): string {
+  return text
+    // \f (0x0C) = form-feed → \frac, \flat etc.
+    .replace(/\x0crac/g, '\\frac')
+    .replace(/\x0clat\b/g, '\\flat')
+    // \b (0x08) = backspace → \boxed, \beta, \big etc.
+    .replace(/\x08oxed/g, '\\boxed')
+    .replace(/\x08eta\b/g, '\\beta')
+    .replace(/\x08ig\b/g, '\\big')
+    // \t (0x09) = tab → \text, \theta, \tau, \times etc.
+    .replace(/\x09ext\b/g, '\\text')
+    .replace(/\x09heta\b/g, '\\theta')
+    .replace(/\x09au\b/g, '\\tau')
+    .replace(/\x09imes\b/g, '\\times')
+    // \n (0x0A) = newline → \nabla, \nu etc.
+    .replace(/\x0abla\b/g, '\\nabla')
+    .replace(/\x0au\b/g, '\\nu')
+    // \r (0x0D) = carriage return → \rho etc.
+    .replace(/\x0dheta\b/g, '\\theta')
+    .replace(/\x0dho\b/g, '\\rho');
+}
+
+function hasLatexCorruption(latex: string): boolean {
+  // Control characters left over from JSON escape corruption (\f→0x0C, \b→0x08, \t→0x09, \r→0x0D, \n→0x0A)
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(latex)) return true;
+  // Bare fragments that appear when backslash was consumed (rac from \frac, ext from \text, oxed from \boxed)
+  if (/(?:^|[^a-zA-Z\\])(rac|oxed|ext\b|imes\b|heta\b|nabla\b|cdot\b)/.test(latex)) return true;
+  return false;
+}
+
+function FixableLatexWrapper({
+  children,
+  latex,
+  isBlackboard,
+  onFix,
+}: {
+  children: React.ReactNode;
+  latex: string;
+  isBlackboard: boolean;
+  onFix?: () => void;
+}) {
+  const corrupt = onFix && hasLatexCorruption(latex);
+
+  return (
+    <div className="group relative">
+      {children}
+      {corrupt && (
+        <button
+          onClick={onFix}
+          className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold
+            opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity
+            ${isBlackboard ? "bg-neutral-900/90 text-amber-400 hover:text-amber-300 border border-amber-400/30" : "bg-white/95 text-amber-600 hover:text-amber-700 border border-amber-400/40"}
+            shadow-md`}
+        >
+          <Sparkles className="h-2.5 w-2.5" />fix math
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FixableMathContent({
+  text,
+  isBlackboard,
+  instant,
+  onFix,
+  component,
+}: {
+  text: string;
+  isBlackboard: boolean;
+  instant?: boolean;
+  onFix?: () => void;
+  component: "body" | "tip";
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [btnPos, setBtnPos] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const errorEl = ref.current.querySelector(".katex-error") as HTMLElement | null;
+    if (!errorEl) return;
+    const errRect = errorEl.getBoundingClientRect();
+    const parentRect = ref.current.getBoundingClientRect();
+    setBtnPos({ left: errRect.left - parentRect.left, top: errRect.bottom - parentRect.top + 2 });
+  }, [text]); // re-check when text changes (e.g. typewriter completes)
+
+  return (
+    <div ref={ref} className="group relative">
+      {component === "body"
+        ? <TypewriterText text={text} isBlackboard={isBlackboard} instant={instant} />
+        : <PlainText text={text} />
+      }
+      {btnPos && onFix && (
+        <button
+          onClick={onFix}
+          style={{ position: "absolute", left: btnPos.left, top: btnPos.top }}
+          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold
+            opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity
+            ${isBlackboard ? "bg-neutral-900/90 text-amber-400 hover:text-amber-300 border border-amber-400/30" : "bg-white/95 text-amber-600 hover:text-amber-700 border border-amber-400/40"}
+            shadow-md`}
+        >
+          <Sparkles className="h-2.5 w-2.5" />fix math
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Colour palette for XY graphs ────────────────────────────────────────────
+const XY_C: Record<string, string> = {
+  cyan: "#22d3ee", blue: "#60a5fa", amber: "#f59e0b",
+  green: "#4ade80", red: "#f87171", white: "#e2e8f0", purple: "#c084fc",
+};
+const xyCol = (name?: string) => XY_C[name ?? "cyan"] ?? XY_C.cyan;
+
+function niceTicks(min: number, max: number): number[] {
+  const range = max - min;
+  if (range <= 0) return [min];
+  const rawStep = range / 5;
+  const exp = Math.floor(Math.log10(rawStep));
+  const mag = Math.pow(10, exp);
+  const norm = rawStep / mag;
+  const step = norm < 1.5 ? mag : norm < 3 ? 2 * mag : norm < 7 ? 5 * mag : 10 * mag;
+  const p = Math.max(0, -Math.floor(Math.log10(step)));
+  const start = parseFloat((Math.ceil(min / step) * step).toFixed(p));
+  const ticks: number[] = [];
+  for (let i = 0; i < 20; i++) {
+    const v = parseFloat((start + i * step).toFixed(p));
+    if (v > max + step * 1e-9) break;
+    ticks.push(v);
+  }
+  return ticks.length >= 2 ? ticks : [min, max];
+}
+
+function _sgn(x: number) { return x < 0 ? -1 : x > 0 ? 1 : 0; }
+function _slope3(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number) {
+  const h0 = x1 - x0, h1 = x2 - x1;
+  const s0 = h0 ? (y1 - y0) / h0 : 0;
+  const s1 = h1 ? (y2 - y1) / h1 : 0;
+  const p = (s0 * h1 + s1 * h0) / (h0 + h1);
+  return (_sgn(s0) + _sgn(s1)) * Math.min(Math.abs(s0), Math.abs(s1), 0.5 * Math.abs(p)) || 0;
+}
+function _slope2(x0: number, y0: number, x1: number, y1: number, t: number) {
+  const h = x1 - x0;
+  return h ? (3 * (y1 - y0) / h - t) / 2 : t;
+}
+function smoothCurvePath(pts: Array<{ sx: number; sy: number }>): string {
+  const n = pts.length;
+  if (n === 0) return "";
+  if (n === 1) return `M ${pts[0].sx},${pts[0].sy}`;
+  if (n === 2) return `M ${pts[0].sx},${pts[0].sy} L ${pts[1].sx},${pts[1].sy}`;
+  const m: number[] = new Array(n);
+  for (let i = 1; i < n - 1; i++)
+    m[i] = _slope3(pts[i-1].sx, pts[i-1].sy, pts[i].sx, pts[i].sy, pts[i+1].sx, pts[i+1].sy);
+  m[0]     = _slope2(pts[0].sx, pts[0].sy, pts[1].sx, pts[1].sy, m[1]);
+  m[n - 1] = _slope2(pts[n-2].sx, pts[n-2].sy, pts[n-1].sx, pts[n-1].sy, m[n-2]);
+  let d = `M ${pts[0].sx.toFixed(1)},${pts[0].sy.toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i+1].sx - pts[i].sx;
+    const cp1x = pts[i].sx   + dx / 3, cp1y = pts[i].sy   + m[i]   * dx / 3;
+    const cp2x = pts[i+1].sx - dx / 3, cp2y = pts[i+1].sy - m[i+1] * dx / 3;
+    d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${pts[i+1].sx.toFixed(1)},${pts[i+1].sy.toFixed(1)}`;
+  }
+  return d;
+}
+
+type XYGraphEl = Extract<BoardElement, { type: "ai_xy_graph" }>;
+
+function XYGraphRenderer({ el, isBlackboard }: { el: XYGraphEl; isBlackboard: boolean }) {
+  const W = 520;
+  const H = Math.min(420, Math.max(280, 310 + (el.annotations?.length ?? 0) * 20 + Math.max(0, el.curves.length - 2) * 16));
+  const PL = 68, PT = 32, PR = 52, PB = 58;
+  const PW = W - PL - PR, PH = H - PT - PB;
+  const [xMin, xMax] = el.xRange, [yMin, yMax] = el.yRange;
+  const xSpan = xMax - xMin || 1, ySpan = yMax - yMin || 1;
+  const px = (x: number) => PL + ((x - xMin) / xSpan) * PW;
+  const py = (y: number) => PT + ((yMax - y) / ySpan) * PH;
+  const xTicks = niceTicks(xMin, xMax), yTicks = niceTicks(yMin, yMax);
+  const grid  = isBlackboard ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+  const axCol = isBlackboard ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.65)";
+  const tCol  = isBlackboard ? "#64748b" : "#94a3b8";
+  const lCol  = isBlackboard ? "#94a3b8" : "#64748b";
+  const bg    = isBlackboard ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)";
+  const titl  = isBlackboard ? "#e2e8f0" : "#1e293b";
+  const dotBg = isBlackboard ? "#0f172a" : "#fff";
+  const fmt = (n: number) => {
+    if (Math.abs(n) < 1e-9) return "0";
+    if (Number.isInteger(n)) return String(n);
+    return parseFloat(n.toFixed(2)).toString();
+  };
+  return (
+    <motion.div className="w-full max-w-xl my-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+      {el.title && <p className="text-sm font-semibold mb-2" style={{ color: titl }}>{el.title}</p>}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-xl"
+        style={{ height: "auto", background: bg, border: isBlackboard ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.08)" }}>
+        {xTicks.map((v, i) => <line key={`xg${i}`} x1={px(v)} y1={PT} x2={px(v)} y2={PT+PH} stroke={grid} strokeWidth="1" />)}
+        {yTicks.map((v, i) => <line key={`yg${i}`} x1={PL} y1={py(v)} x2={PL+PW} y2={py(v)} stroke={grid} strokeWidth="1" />)}
+        <line x1={PL} y1={PT+PH+6} x2={PL} y2={PT-6} stroke={axCol} strokeWidth="1.5" strokeLinecap="round" />
+        <polygon points={`${PL-4},${PT+2} ${PL+4},${PT+2} ${PL},${PT-7}`} fill={axCol} />
+        <line x1={PL-6} y1={PT+PH} x2={PL+PW+6} y2={PT+PH} stroke={axCol} strokeWidth="1.5" strokeLinecap="round" />
+        <polygon points={`${PL+PW+2},${PT+PH-4} ${PL+PW+2},${PT+PH+4} ${PL+PW+9},${PT+PH}`} fill={axCol} />
+        {xTicks.map((val, i) => (
+          <g key={`xt${i}`}>
+            <line x1={px(val)} y1={PT+PH} x2={px(val)} y2={PT+PH+5} stroke={axCol} strokeWidth="1" />
+            <text x={px(val)} y={PT+PH+18} textAnchor="middle" fontSize="11" fill={tCol}>{fmt(val)}</text>
+          </g>
+        ))}
+        {yTicks.map((val, i) => (
+          <g key={`yt${i}`}>
+            <line x1={PL-5} y1={py(val)} x2={PL} y2={py(val)} stroke={axCol} strokeWidth="1" />
+            <text x={PL-9} y={py(val)+4} textAnchor="end" fontSize="11" fill={tCol}>{fmt(val)}</text>
+          </g>
+        ))}
+        {el.xLabel && <text x={PL+PW/2} y={H-6} textAnchor="middle" fontSize="13" fontWeight="600" fill={lCol}>{el.xLabel}</text>}
+        {el.yLabel && <text x={14} y={PT+PH/2} textAnchor="middle" fontSize="13" fontWeight="600" fill={lCol} transform={`rotate(-90, 14, ${PT+PH/2})`}>{el.yLabel}</text>}
+        {el.curves.map((curve, ci) => {
+          const c = xyCol(curve.color);
+          const screenPts = curve.points.map(([x, y]) => ({ sx: px(x), sy: py(y) }));
+          const pathD = smoothCurvePath(screenPts);
+          let labelEl: ReactNode = null;
+          if (curve.label) {
+            const atX = curve.labelAt ?? curve.points[Math.floor(curve.points.length * 0.45)][0];
+            let interpY = curve.points[0][1];
+            for (let i = 0; i < curve.points.length - 1; i++) {
+              const [x0, y0] = curve.points[i], [x1, y1] = curve.points[i+1];
+              if (atX >= x0 && atX <= x1) { interpY = y0 + ((x1===x0?0:(atX-x0)/(x1-x0))) * (y1-y0); break; }
+            }
+            const i0 = Math.max(0, curve.points.findIndex(([x]) => x >= atX) - 1);
+            const i1 = Math.min(curve.points.length - 1, i0 + 1);
+            const tdx = px(curve.points[i1][0]) - px(curve.points[i0][0]);
+            const tdy = py(curve.points[i1][1]) - py(curve.points[i0][1]);
+            const tlen = Math.sqrt(tdx*tdx + tdy*tdy) || 1;
+            const OFFSET = 32;
+            const lx = px(atX) + (tdy/tlen)*OFFSET, ly = py(interpY) + (-tdx/tlen)*OFFSET;
+            const nearRight = lx > PL + PW * 0.65;
+            const textW = curve.label.length * 6.5 + 10;
+            const textAnchor = nearRight ? "end" : "start";
+            const rectX = nearRight ? lx - textW - 2 : lx - 4;
+            labelEl = (
+              <g>
+                <rect x={rectX} y={ly-13} width={textW} height={16} rx="3"
+                  fill={isBlackboard ? "rgba(10,18,30,0.82)" : "rgba(255,255,255,0.88)"} />
+                <text x={lx} y={ly-1} textAnchor={textAnchor} fontSize="11" fontWeight="700" fill={c}>{curve.label}</text>
+              </g>
+            );
+          }
+          return (
+            <g key={`cv${ci}`}>
+              <path d={pathD} fill="none" stroke={c} strokeWidth="2.5"
+                strokeDasharray={curve.dashed ? "8,4" : undefined} strokeLinecap="round" strokeLinejoin="round" />
+              {labelEl}
+            </g>
+          );
+        })}
+        {(el.markers ?? []).map((m, mi) => {
+          const ty = py(m.y) - 16, tw = (m.label?.length ?? 0) * 6.5 + 8;
+          const wouldClip = px(m.x) + 8 + tw > W - 4;
+          const tx = wouldClip ? px(m.x) - 8 : px(m.x) + 8;
+          const anchor = wouldClip ? "end" : "start";
+          const rx = wouldClip ? tx - tw : tx - 4;
+          return (
+            <g key={`mk${mi}`}>
+              <line x1={px(m.x)} y1={py(m.y)} x2={px(m.x)} y2={PT+PH} stroke={XY_C.cyan} strokeWidth="1" strokeDasharray="4,3" opacity="0.4" />
+              <line x1={PL} y1={py(m.y)} x2={px(m.x)} y2={py(m.y)} stroke={XY_C.cyan} strokeWidth="1" strokeDasharray="4,3" opacity="0.4" />
+              <circle cx={px(m.x)} cy={py(m.y)} r="4.5" fill={dotBg} stroke={XY_C.cyan} strokeWidth="2" />
+              {m.label && (
+                <g>
+                  <rect x={rx} y={ty-12} width={tw} height={15} rx="3"
+                    fill={isBlackboard ? "rgba(10,18,30,0.82)" : "rgba(255,255,255,0.88)"} />
+                  <text x={tx} y={ty} textAnchor={anchor} fontSize="11" fontWeight="700" fill={XY_C.cyan}>{m.label}</text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+        {(el.annotations ?? []).map((a, ai) => (
+          <text key={`an${ai}`} x={px(a.x)} y={py(a.y)}
+            textAnchor={px(a.x) > PL+PW*0.65 ? "end" : "start"}
+            fontSize="12" fill={lCol} fontStyle="italic">{a.text}</text>
+        ))}
+      </svg>
+    </motion.div>
+  );
+}
+
+type IframeDiagramEl = Extract<BoardElement, { type: "ai_diagram" }>;
+
+function IframeDiagramRenderer({ el, isBlackboard }: { el: IframeDiagramEl; isBlackboard: boolean }) {
+  const titl = isBlackboard ? "#e2e8f0" : "#1e293b";
+  const bg   = isBlackboard ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)";
+  const bord = isBlackboard ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.08)";
+  const aspectRatio = (() => {
+    const m = el.html?.match(/viewBox=["']\s*[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/);
+    if (m) { const w = parseFloat(m[1]), h = parseFloat(m[2]); if (w > 0 && h > 0) return w / h; }
+    return 4 / 3;
+  })();
+  const srcDoc = `<!DOCTYPE html><html><head><style>* { margin:0;padding:0;box-sizing:border-box } html,body { width:100%;height:100%;background:transparent;overflow:hidden } svg,canvas { width:100%;height:100%;display:block }</style></head><body>${el.html ?? ""}</body></html>`;
+  return (
+    <motion.div className="w-full my-4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+      {el.title && <p className="text-sm font-semibold mb-2" style={{ color: titl }}>{el.title}</p>}
+      <div className="rounded-xl overflow-hidden mx-auto"
+        style={{ background: bg, border: bord, aspectRatio: String(aspectRatio), position: "relative", width: "100%", maxWidth: "560px" }}>
+        <iframe srcDoc={srcDoc} sandbox="allow-scripts" scrolling="no" title={el.title ?? "diagram"}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }} />
+      </div>
+    </motion.div>
+  );
 }
 
 export function BoardRenderer({
@@ -985,7 +1380,13 @@ export function BoardRenderer({
   onCheckpointAnswer,
   optionAnswers,
   onOptionSelect,
+  onFixElement,
   instant = false,
+  showSpeakButtons = false,
+  speakingElementId,
+  onSpeakElement,
+  onSpeakBlock,
+  onStopBlock,
 }: BoardRendererProps) {
   const isBlackboard = boardMode === "blackboard";
   const items = groupElements(elements);
@@ -1044,25 +1445,58 @@ export function BoardRenderer({
             );
 
           // ── Header ───────────────────────────────────────────────────────────
-          case "ai_header":
+          case "ai_header": {
+            const hIdx = elements.findIndex(e => e.id === el.id);
+            const nextStudentIdx = elements.findIndex((e, i) => i > hIdx && e.type === "student_text");
+            const blockEls = elements.slice(hIdx, nextStudentIdx === -1 ? undefined : nextStudentIdx);
+            const blockSpeakItems = blockEls
+              .map(e => ({ speak: ((e as any).speak ?? ("content" in e ? (e as any).content : "")) as string, id: e.id }))
+              .filter(bi => bi.speak.trim());
+            const isBlockPlaying = !!speakingElementId && blockEls.some(e => e.id === speakingElementId);
             return (
               <motion.div
                 key={el.id}
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`max-w-4xl mt-6 border-b pb-2 transition-colors duration-300 ${isBlackboard ? "border-emerald-500/20" : "border-emerald-500/10"
-                  }`}
+                className={`max-w-4xl mt-6 border-b pb-2 transition-colors duration-300 ${isBlackboard ? "border-emerald-500/20" : "border-emerald-500/10"}`}
               >
-                <h2
-                  className={`text-3xl md:text-4xl font-black tracking-tight drop-shadow-sm transition-colors duration-300 ${isBlackboard
-                      ? "text-emerald-400 drop-shadow-[0_2px_8px_rgba(52,211,153,0.15)]"
-                      : "text-emerald-600"
-                    }`}
-                >
-                  <PlainText text={el.content} />
-                </h2>
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-3" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <div className="flex items-center gap-3">
+                    <h2 className={`flex-1 text-3xl md:text-4xl font-black tracking-tight drop-shadow-sm transition-colors duration-300 ${isBlackboard ? "text-emerald-400 drop-shadow-[0_2px_8px_rgba(52,211,153,0.15)]" : "text-emerald-600"}`}>
+                      <PlainText text={el.content} />
+                    </h2>
+                    {showSpeakButtons && blockEls.length > 1 && (
+                      isBlockPlaying && onStopBlock ? (
+                        <button
+                          onClick={onStopBlock}
+                          className={`shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all duration-150 ${
+                            isBlackboard
+                              ? "bg-blue-500/25 text-blue-200 hover:bg-blue-500/35"
+                              : "bg-blue-200 text-blue-800 hover:bg-blue-300"
+                          }`}
+                        >
+                          <Square size={8} className="fill-current" />
+                          Stop
+                        </button>
+                      ) : onSpeakBlock ? (
+                        <button
+                          onClick={() => onSpeakBlock(blockSpeakItems)}
+                          className={`shrink-0 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all duration-150 ${
+                            isBlackboard
+                              ? "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 hover:text-blue-200"
+                              : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                          }`}
+                        >
+                          <RotateCcw size={10} />
+                          Replay
+                        </button>
+                      ) : null
+                    )}
+                  </div>
+                </SpeakBtnWrap>
               </motion.div>
             );
+          }
 
           // ── Body (typewriter) ─────────────────────────────────────────────────
           case "ai_body":
@@ -1074,13 +1508,33 @@ export function BoardRenderer({
                 transition={{ delay: 0.05 }}
                 className="max-w-3xl"
               >
-                <TypewriterText text={el.content} isBlackboard={isBlackboard} instant={instant} />
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-1" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <FixableMathContent
+                    text={el.content}
+                    isBlackboard={isBlackboard}
+                    instant={instant}
+                    component="body"
+                    onFix={onFixElement ? () => onFixElement(el.id, regexFixMath(el.content)) : undefined}
+                  />
+                </SpeakBtnWrap>
               </motion.div>
             );
 
           // ── Math ─────────────────────────────────────────────────────────────
           case "ai_math":
-            return <MathRenderer key={el.id} latex={el.latex} isBlackboard={isBlackboard} />;
+            return (
+              <div key={el.id}>
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-7" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <FixableLatexWrapper
+                    latex={el.latex}
+                    isBlackboard={isBlackboard}
+                    onFix={onFixElement ? () => onFixElement(el.id, regexFixMath(el.latex)) : undefined}
+                  >
+                    <MathRenderer latex={el.latex} isBlackboard={isBlackboard} />
+                  </FixableLatexWrapper>
+                </SpeakBtnWrap>
+              </div>
+            );
 
           // ── Semantic 2D diagram ─────────────────────────────────────────────
           case "ai_semantic_diagram":
@@ -1159,11 +1613,17 @@ export function BoardRenderer({
                 transition={{ duration: 0.45 }}
                 className="my-6 pl-2"
               >
-                <div className={`select-all font-sans text-xl md:text-2xl ${
-                  isBlackboard ? "text-emerald-200" : "text-emerald-800"
-                }`}>
-                  <BlockMath math={el.latex} />
-                </div>
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-3" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <FixableLatexWrapper
+                    latex={el.latex}
+                    isBlackboard={isBlackboard}
+                    onFix={onFixElement ? () => onFixElement(el.id, regexFixMath(el.latex)) : undefined}
+                  >
+                    <div className={`select-all font-sans text-xl md:text-2xl ${isBlackboard ? "text-emerald-200" : "text-emerald-800"}`}>
+                      <BlockMath math={el.latex} />
+                    </div>
+                  </FixableLatexWrapper>
+                </SpeakBtnWrap>
               </motion.div>
             );
 
@@ -1177,26 +1637,22 @@ export function BoardRenderer({
                 transition={{ duration: 0.4, delay: 0.1 }}
                 className="max-w-3xl my-4 rotate-[0.25deg]"
               >
-                <div
-                  className={`relative rounded-lg p-5 transition-all duration-300 ${
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-5" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <div className={`relative rounded-lg p-5 transition-all duration-300 ${
                     isBlackboard
                       ? "bg-amber-950/15 text-amber-200/90 shadow-[0_0_18px_rgba(245,158,11,0.04)] border-[2.5px] border-dashed border-amber-500/50"
                       : "bg-amber-500/5 text-amber-900 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border-[2.5px] border-dashed border-amber-600/70"
-                  }`}
-                >
-                  {isBlackboard && (
-                    <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-amber-400/20 opacity-60" />
-                  )}
-                  <div className={`flex items-center gap-2 mb-2 font-serif italic text-sm tracking-wide lowercase opacity-80 ${
-                    isBlackboard ? "text-amber-400" : "text-amber-700"
                   }`}>
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    <span>warning</span>
+                    {isBlackboard && <div className="absolute top-0 right-0 w-4 h-4 border-t border-r border-amber-400/20 opacity-60" />}
+                    <div className={`flex items-center gap-2 mb-2 font-serif italic text-sm tracking-wide lowercase opacity-80 ${isBlackboard ? "text-amber-400" : "text-amber-700"}`}>
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span>warning</span>
+                    </div>
+                    <p className="text-base font-medium leading-relaxed antialiased tracking-wide">
+                      <PlainText text={el.content} />
+                    </p>
                   </div>
-                  <p className="text-base font-medium leading-relaxed antialiased tracking-wide">
-                    <PlainText text={el.content} />
-                  </p>
-                </div>
+                </SpeakBtnWrap>
               </motion.div>
             );
 
@@ -1210,24 +1666,23 @@ export function BoardRenderer({
                 transition={{ duration: 0.4, delay: 0.1 }}
                 className="max-w-3xl my-4"
               >
-                <div
-                  className={`rounded-xl border-0 px-8 py-5 transition-all duration-300 ${
-                    isBlackboard ? "text-amber-100" : "text-amber-900"
-                  }`}
-                  style={{ boxShadow: "rgba(6, 24, 44, 0.4) 0px 0px 0px 2px, rgba(6, 24, 44, 0.65) 0px 4px 6px -1px, rgba(255, 255, 255, 0.08) 0px 1px 0px inset",
-                    background: isBlackboard ? "rgba(30,20,5,0.6)" : "rgba(255,251,235,0.9)"
-                  }}
-                >
-                  <div className={`flex items-center gap-1.5 mb-3 text-xs font-semibold uppercase tracking-widest ${
-                    isBlackboard ? "text-amber-400 opacity-70" : "text-amber-800 opacity-90"
-                  }`}>
-                    <Lightbulb className="h-3.5 w-3.5 shrink-0" />
-                    <span>Tip</span>
+                <SpeakBtnWrap show={showSpeakButtons} topPt="pt-5" btn={<SpeakBtn el={el} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />}>
+                  <div
+                    className={`rounded-xl border-0 px-8 py-5 transition-all duration-300 ${isBlackboard ? "text-amber-100" : "text-amber-900"}`}
+                    style={{ boxShadow: "rgba(6, 24, 44, 0.4) 0px 0px 0px 2px, rgba(6, 24, 44, 0.65) 0px 4px 6px -1px, rgba(255, 255, 255, 0.08) 0px 1px 0px inset", background: isBlackboard ? "rgba(30,20,5,0.6)" : "rgba(255,251,235,0.9)" }}
+                  >
+                    <div className={`flex items-center gap-1.5 mb-3 text-xs font-semibold uppercase tracking-widest ${isBlackboard ? "text-amber-400 opacity-70" : "text-amber-800 opacity-90"}`}>
+                      <Lightbulb className="h-3.5 w-3.5 shrink-0" />
+                      <span>Tip</span>
+                    </div>
+                    <FixableMathContent
+                      text={el.content}
+                      isBlackboard={isBlackboard}
+                      component="tip"
+                      onFix={onFixElement ? () => onFixElement(el.id, regexFixMath(el.content)) : undefined}
+                    />
                   </div>
-                  <p className="text-base font-medium leading-relaxed antialiased">
-                    <PlainText text={el.content} />
-                  </p>
-                </div>
+                </SpeakBtnWrap>
               </motion.div>
             );
 
@@ -1242,23 +1697,20 @@ export function BoardRenderer({
                 transition={{ duration: 0.5, delay: 0.15 }}
                 className="max-w-3xl my-4"
               >
-                <p
-                  className={`text-lg font-medium tracking-wide leading-relaxed antialiased italic transition-colors duration-300 ${
-                    isBlackboard ? "text-neutral-100" : "text-neutral-900"
-                  }`}
-                >
-                  <PlainText text={el.content} />
-                </p>
-
-                {/* Inline answer input — only shown while this is the active checkpoint */}
-                <AnimatePresence>
-                  {isActive && (
-                    <CheckpointInput
-                      isBlackboard={isBlackboard}
-                      onSubmit={onCheckpointAnswer}
-                    />
-                  )}
-                </AnimatePresence>
+                {/* question text — always has the left speak-button column */}
+                <div className="flex items-start gap-2">
+                  <div className="w-5 shrink-0 pt-1 flex justify-center">
+                    <SpeakBtn el={el} alwaysVisible showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />
+                  </div>
+                  <div className="flex-1">
+                    <p className={`text-lg font-medium tracking-wide leading-relaxed antialiased italic transition-colors duration-300 ${isBlackboard ? "text-neutral-100" : "text-neutral-900"}`}>
+                      <PlainText text={el.content} />
+                    </p>
+                    <AnimatePresence>
+                      {isActive && <CheckpointInput isBlackboard={isBlackboard} onSubmit={onCheckpointAnswer} />}
+                    </AnimatePresence>
+                  </div>
+                </div>
               </motion.div>
             );
           }
@@ -1271,8 +1723,14 @@ export function BoardRenderer({
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.4, delay: idx * 0.05 }}
-                className="ml-4 my-2 max-w-3xl flex items-center gap-4"
+                className="ml-4 my-2 max-w-3xl flex items-center"
               >
+                <div
+                  className="shrink-0 overflow-hidden flex justify-center"
+                  style={{ width: showSpeakButtons ? 28 : 0, transition: "width 150ms ease" }}
+                >
+                  <SpeakBtn el={el} speakText={el.speak ?? el.label} showSpeakButtons={showSpeakButtons} speakingElementId={speakingElementId} onSpeakElement={onSpeakElement} isBlackboard={isBlackboard} />
+                </div>
                 <div
                   className={`flex-1 rounded-xl border-0 px-6 py-3 transition-all duration-300 select-all font-sans text-lg ${isBlackboard ? "bg-white/8 text-cyan-200" : "bg-white text-cyan-800"}`}
                   style={{ boxShadow: isBlackboard
@@ -1282,68 +1740,18 @@ export function BoardRenderer({
                 >
                   <BlockMath math={el.latex} />
                 </div>
-                <span className={`text-2xl font-black shrink-0 select-none flex items-center gap-1 ${
-                  isBlackboard ? "text-white/80" : "text-neutral-900"
-                }`}>
+                <span className={`text-2xl font-black shrink-0 select-none flex items-center gap-1 ${isBlackboard ? "text-white/80" : "text-neutral-900"}`}>
                   <span className="text-base font-light opacity-40">──</span>
                   {el.number}
                 </span>
               </motion.div>
             );
 
-          // ── Diagram (placeholder, swappable) ─────────────────────────────────
+          case "ai_xy_graph":
+            return <XYGraphRenderer key={el.id} el={el} isBlackboard={isBlackboard} />;
+
           case "ai_diagram":
-            return (
-              <motion.div
-                key={el.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="max-w-3xl my-4"
-              >
-                <div
-                  className={`rounded-xl border overflow-hidden transition-all duration-300 ${isBlackboard
-                      ? "border-indigo-500/25 bg-indigo-500/8"
-                      : "border-indigo-300/40 bg-indigo-50/60"
-                    }`}
-                >
-                  <div
-                    className={`flex items-center gap-2 px-5 py-3 border-b text-xs font-bold uppercase tracking-widest ${isBlackboard
-                        ? "border-indigo-500/20 text-indigo-300"
-                        : "border-indigo-200/60 text-indigo-600"
-                      }`}
-                  >
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 opacity-80">
-                      <path
-                        fillRule="evenodd"
-                        d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Diagram
-                  </div>
-                  <div
-                    className={`flex flex-col items-center justify-center gap-4 px-8 py-10 min-h-[180px] ${isBlackboard ? "text-indigo-200" : "text-indigo-700"
-                      }`}
-                  >
-                    <svg
-                      viewBox="0 0 48 48"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      className="w-12 h-12 opacity-30"
-                    >
-                      <rect x="4" y="4" width="40" height="40" rx="4" />
-                      <polyline points="4,36 16,22 24,30 32,18 44,32" />
-                      <circle cx="34" cy="14" r="4" />
-                    </svg>
-                    <p className="text-sm font-medium leading-relaxed text-center max-w-md opacity-80">
-                      <PlainText text={el.description} />
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            );
+            return <IframeDiagramRenderer key={el.id} el={el} isBlackboard={isBlackboard} />;
 
           // ── Code block ───────────────────────────────────────────────────────
           case "ai_code":
@@ -1409,7 +1817,7 @@ export function BoardRenderer({
             return null;
         }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBlackboard, checkpointElementId, optionAnswers, onCheckpointAnswer, onOptionSelect, instant]);
+  }, [isBlackboard, checkpointElementId, optionAnswers, onCheckpointAnswer, onOptionSelect, instant, showSpeakButtons, speakingElementId, onSpeakElement, onSpeakBlock, onStopBlock, elements]);
 
   return (
     <MotionConfig reducedMotion={instant ? "always" : "never"}>

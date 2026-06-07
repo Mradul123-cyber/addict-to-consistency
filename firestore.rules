@@ -35,10 +35,17 @@ service cloud.firestore {
 
     // Device abuse prevention — track which accounts used AI per device
     match /deviceAccounts/{deviceId} {
-      allow read: if request.auth != null;
+      // Only readable if: document doesn't exist yet (new device check) OR caller's UID is already registered
+      // Permission-denied on an existing doc = UID not registered = device full → client treats as blocked
+      allow read: if request.auth != null
+        && (resource == null || resource.data.uids.hasAll([request.auth.uid]));
+
+      // Only allow adding own UID — existing UIDs can never be removed
       allow write: if request.auth != null
         && request.resource.data.keys().hasOnly(["uids"])
-        && request.resource.data.uids is list;
+        && request.resource.data.uids is list
+        && request.resource.data.uids.hasAll([request.auth.uid])
+        && (resource == null || request.resource.data.uids.hasAll(resource.data.uids));
     }
 
     // Community notes — any authenticated user can upload and upvote

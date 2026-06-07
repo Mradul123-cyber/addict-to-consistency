@@ -20,7 +20,7 @@ export interface UploadedAttachment {
   mimeType: string;
   size: number;
   kind: UploadedAttachmentKind;
-  storageUrl?: string; // Firebase Storage download URL (set after upload)
+  storageUrl?: string; // R2 key (new) or Firebase Storage URL (legacy)
   text?: string;       // pdf: extracted text (always stored for history)
 }
 
@@ -101,7 +101,25 @@ export type BoardElement = (
   | { id: string; type: "ai_tip"; content: string }
   | { id: string; type: "ai_question"; content: string }
   | { id: string; type: "ai_step"; number: number; label: string; latex: string }
-  | { id: string; type: "ai_diagram"; description: string }
+  | { id: string; type: "ai_diagram"; title?: string; html: string }
+  | {
+      id: string;
+      type: "ai_xy_graph";
+      title?: string;
+      xLabel?: string;
+      yLabel?: string;
+      xRange: [number, number];
+      yRange: [number, number];
+      curves: Array<{
+        points: Array<[number, number]>;
+        label?: string;
+        labelAt?: number;
+        color?: string;
+        dashed?: boolean;
+      }>;
+      markers?: Array<{ x: number; y: number; label?: string }>;
+      annotations?: Array<{ text: string; x: number; y: number }>;
+    }
   | {
       id: string;
       type: "ai_semantic_diagram";
@@ -151,7 +169,34 @@ export type BoardElement = (
 ) & { speak?: string };
 
 export type TeachMode = "jee" | "neet" | "general" | "coding" | "upsc" | "marketing";
-export type SubMode = "general" | "3d";
+export type SubMode = "general" | "3d" | "2d";
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+
+export type CanvasTool =
+  | "pen" | "highlighter" | "eraser"
+  | "line" | "arrow" | "double_arrow" | "circle" | "rect" | "triangle" | "pentagon" | "hexagon";
+
+export const CANVAS_COLORS = [
+  { id: "white",  hex: "#ffffff" },
+  { id: "yellow", hex: "#facc15" },
+  { id: "green",  hex: "#4ade80" },
+  { id: "blue",   hex: "#60a5fa" },
+  { id: "red",    hex: "#f87171" },
+  { id: "orange", hex: "#fb923c" },
+  { id: "black",  hex: "#1a1a1a" },
+] as const;
+
+export const CANVAS_BRUSH_SIZE_DEFAULT = 5;
+export const CANVAS_BRUSH_SIZE_MIN     = 1;
+export const CANVAS_BRUSH_SIZE_MAX     = 40;
+
+export interface CanvasOverlayHandle {
+  undo: () => void;
+  redo: () => void;
+  clear: () => void;
+  captureAsImage: () => string | null;
+}
 
 // ─── Teaching Session ─────────────────────────────────────────────────────────
 
@@ -201,6 +246,8 @@ export interface AIStateVisualizerProps {
 
 // ─── Board Props ──────────────────────────────────────────────────────────────
 
+export type TeachLanguage = "english" | "hinglish" | "hindi";
+
 export interface TeachBoardProps {
   config: BoardConfig;
   aiState: AIState;
@@ -212,6 +259,21 @@ export interface TeachBoardProps {
   /** Whether the TTS voice is currently enabled */
   ttsEnabled: boolean;
   onToggleTTS: () => void;
+  /** Whether per-element speak buttons are visible */
+  elementSpeakEnabled?: boolean;
+  onToggleElementSpeak?: () => void;
+  /** False when board is empty — toggle shows a toast instead of activating */
+  elementSpeakAvailable?: boolean;
+  /** Playback speed multiplier — affects both TTS and board animation delays */
+  speed?: number;
+  onSpeedChange?: (speed: number) => void;
+  // Canvas
+  isCanvasActive?: boolean;
+  canvasRef?: React.RefObject<CanvasOverlayHandle | null>;
+  canvasTool?: CanvasTool;
+  canvasColor?: string;
+  brushSize?: number;
+  canvasSessionId?: string | null;
 }
 
 // ─── Bottom Dock Props ────────────────────────────────────────────────────────
@@ -227,4 +289,12 @@ export interface BottomDockProps {
   onSubModeChange?: (m: SubMode) => void;
   showSubMode?: boolean;
   isAttachmentUploading?: boolean;
+  language?: TeachLanguage;
+  onLanguageChange?: (l: TeachLanguage) => void;
+  boardLanguage?: TeachLanguage;
+  onBoardLanguageChange?: (l: TeachLanguage) => void;
+  isLoggedIn?: boolean;
+  // Canvas
+  isCanvasActive?: boolean;
+  onToggleCanvas?: () => void;
 }

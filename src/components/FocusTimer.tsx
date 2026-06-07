@@ -291,7 +291,7 @@ export function FocusTimer({
           value={chapterId}
           onChange={(id) => {
             setChapterId(id);
-            navigate({ to: "/focus", search: { subject: undefined }, replace: true });
+            navigate({ to: "/focus", search: { subject: "" }, replace: true });
           }}
           onSubjectSelect={onSubjectSelect}
         />

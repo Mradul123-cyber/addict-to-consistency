@@ -397,7 +397,7 @@ export function StudyCalendar({
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: color }} />
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{SUBJECT_LABELS[s.subject] ?? track?.name ?? "Study"}</p>
+                          <p className="text-sm font-semibold text-foreground truncate">{(s.subject ? SUBJECT_LABELS[s.subject] : undefined) ?? track?.name ?? "Study"}</p>
                           {chapter && <p className="text-xs text-muted-foreground truncate">{chapter.name}</p>}
                         </div>
                       </div>

@@ -1,6 +1,6 @@
 import { useSyncExternalStore, useEffect } from "react";
 import { nanoid } from "nanoid";
-import { SEED_TRACKS } from "./seed";
+import { SEED_TRACKS, SEED_VERSION } from "./seed";
 import { db, auth } from "./firebase";
 import {
   collection,
@@ -15,6 +15,16 @@ import {
   limit,
 } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+
+// ── Debounced save-error toast — shows at most once every 8s ─────────────────
+let saveErrorPending = false;
+function showSaveError() {
+  if (saveErrorPending) return;
+  saveErrorPending = true;
+  toast.warning("Couldn't save your progress — check your connection");
+  setTimeout(() => { saveErrorPending = false; }, 8000);
+}
 
 export type Priority = "High" | "Medium" | "Low";
 
@@ -130,19 +140,51 @@ let unsubscribeCalendarTasks: (() => void) | null = null;
 const CACHE_PREFIX = "store_cache_";
 
 // ── Debounced tracks write — batches rapid concept toggles into 1 Firestore write ──
+// On tab hide/close, pending write is flushed immediately instead of being lost.
 let tracksWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingTracksWrite: { uid: string; tracks: Track[] } | null = null;
+
+async function flushTracksWrite(): Promise<void> {
+  if (!pendingTracksWrite) return;
+  const { uid, tracks: pendingTracks } = pendingTracksWrite;
+  try {
+    const { doc, setDoc } = await import("firebase/firestore");
+    const { db } = await import("./firebase");
+    await setDoc(doc(db, "users", uid, "tracks", "data"), { tracks: pendingTracks }, { merge: true });
+    pendingTracksWrite = null;
+  } catch (err) {
+    console.error("Error saving tracks:", err);
+    showSaveError();
+  }
+}
+
 function scheduleTracksWrite(uid: string, updatedTracks: Track[]) {
+  pendingTracksWrite = { uid, tracks: updatedTracks };
   if (tracksWriteTimer) clearTimeout(tracksWriteTimer);
-  tracksWriteTimer = setTimeout(async () => {
+  tracksWriteTimer = setTimeout(() => {
     tracksWriteTimer = null;
-    try {
-      const { doc, setDoc } = await import("firebase/firestore");
-      const { db } = await import("./firebase");
-      await setDoc(doc(db, "users", uid, "tracks", "data"), { tracks: updatedTracks }, { merge: true });
-    } catch (err) {
-      console.error("Error saving tracks:", err);
+    void flushTracksWrite();
+  }, 30 * 60 * 1000); // 30 min fallback — exit events (visibilitychange/beforeunload) handle the normal case
+}
+
+// Flush on tab hide — covers tab close, mobile backgrounding, navigation away
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && pendingTracksWrite) {
+      if (tracksWriteTimer) { clearTimeout(tracksWriteTimer); tracksWriteTimer = null; }
+      void flushTracksWrite();
     }
-  }, 1500);
+  });
+}
+
+// Flush on refresh (F5/Ctrl+R) — beforeunload fires where visibilitychange doesn't
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    if (pendingTracksWrite) {
+      if (tracksWriteTimer) { clearTimeout(tracksWriteTimer); tracksWriteTimer = null; }
+      void flushTracksWrite();
+    }
+  });
 }
 
 function loadCachedData(uid: string) {
@@ -252,12 +294,12 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
   unsubscribeTracks = onSnapshot(
     tracksDocRef,
     async (snapshot) => {
-      if (!snapshot.exists()) {
-        try {
-          await setDoc(tracksDocRef, { tracks: SEED_TRACKS });
-        } catch (err) {
-          console.error("Error seeding tracks:", err);
-        }
+      if (!snapshot.exists() || snapshot.data()?.seedVersion !== SEED_VERSION) {
+        // Fresh seed or version bump — re-seed tracks entirely (preserves customTasks)
+        // Fire-and-forget — do not await inside snapshot callback to avoid blocking the write stream
+        const existingCustomTasks = snapshot.exists() ? (snapshot.data()?.customTasks || []) : [];
+        void setDoc(tracksDocRef, { tracks: SEED_TRACKS, seedVersion: SEED_VERSION, customTasks: existingCustomTasks })
+          .catch((err) => console.error("Error seeding tracks:", err));
       } else {
         const loadedTracks: Track[] = snapshot.data().tracks || [];
         customTasks = snapshot.data().customTasks || [];
@@ -266,9 +308,12 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
         let needsMigration = false;
         const migratedTracks = loadedTracks.map((t) => {
           const seedTrack = SEED_TRACKS.find((st) => st.id === t.id);
+          if (!seedTrack) return t;
+
+          // Backfill missing concepts
           const migratedChapters = t.chapters.map((c) => {
             if (!c.concepts || c.concepts.length === 0) {
-              const seedChapter = seedTrack?.chapters.find((sc) => sc.id === c.id);
+              const seedChapter = seedTrack.chapters.find((sc) => sc.id === c.id);
               if (seedChapter?.concepts && seedChapter.concepts.length > 0) {
                 needsMigration = true;
                 return { ...c, concepts: seedChapter.concepts };
@@ -276,15 +321,15 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
             }
             return c;
           });
+
           return { ...t, chapters: migratedChapters };
         });
 
         if (needsMigration) {
-          try {
-            await setDoc(tracksDocRef, { tracks: migratedTracks }, { merge: true });
-          } catch (err) {
-            console.error("Error migrating concepts:", err);
-          }
+          // Fire-and-forget — do not await inside the snapshot callback to avoid blocking the write stream
+          void setDoc(tracksDocRef, { tracks: migratedTracks }, { merge: true }).catch(
+            (err) => console.error("Error migrating concepts:", err)
+          );
         }
 
         tracks = migratedTracks;
@@ -605,15 +650,10 @@ export async function addSession(input: Omit<SessionLog, "id" | "createdAt">) {
   try {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-
-    const log = {
-      ...input,
-      createdAt: Date.now(),
-    };
-
-    await addDoc(collection(db, "users", uid, "sessions"), log);
+    await addDoc(collection(db, "users", uid, "sessions"), { ...input, createdAt: Date.now() });
   } catch (err) {
     console.error("Error adding session:", err);
+    toast.warning("Focus session couldn't be saved — check your connection");
   }
 }
 
@@ -654,6 +694,7 @@ export async function addCalendarTask(dateISO: string, text: string, subject: st
     await addDoc(col, { dateISO, text: trimmed, subject, done: false, createdAt: Date.now() });
   } catch (err) {
     console.error("Error adding calendar task:", err);
+    showSaveError();
   }
 }
 
@@ -665,6 +706,7 @@ export async function toggleCalendarTask(id: string, done: boolean) {
     await updateDoc(ref, { done });
   } catch (err) {
     console.error("Error toggling calendar task:", err);
+    showSaveError();
   }
 }
 
@@ -676,6 +718,7 @@ export async function deleteCalendarTask(id: string) {
     await deleteDoc(ref);
   } catch (err) {
     console.error("Error deleting calendar task:", err);
+    showSaveError();
   }
 }
 

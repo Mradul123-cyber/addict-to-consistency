@@ -31,6 +31,7 @@ src/routes/admin/
 
 # Dev/seed scripts
 scripts/
+cleanup-old-sessions.mjs
 
 # Editor directories and files
 .vscode/*

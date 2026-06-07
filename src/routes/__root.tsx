@@ -17,7 +17,6 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/AuthGate";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { NotesChromeProvider } from "@/contexts/NotesChromeContext";
-import { AdminProvider } from "@/contexts/AdminContext";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -189,7 +188,6 @@ function RootComponent() {
         <AuthGate>
           <ProfileProvider>
             <OnboardingGate>
-              <AdminProvider>
               <NotesChromeProvider>
                 {isPrivacyRoute ? (
                   <div className="min-h-screen bg-background text-foreground">
@@ -212,7 +210,6 @@ function RootComponent() {
                 </div>
                 )}
               </NotesChromeProvider>
-              </AdminProvider>
             </OnboardingGate>
           </ProfileProvider>
         </AuthGate>

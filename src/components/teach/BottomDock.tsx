@@ -1,8 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, Mic2, ChevronDown, Check, Loader2 } from "lucide-react";
+import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, AudioLines, LayoutGrid, ChevronDown, Check, Loader2, Play, Square, PencilLine } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
-import { PRESET_VOICES, getSavedVoiceId, saveVoiceId } from "@/lib/tts";
+import { PRESET_VOICES, HINGLISH_VOICES, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId } from "@/lib/tts";
 
 export function BottomDock({
   inputState,
@@ -15,32 +15,72 @@ export function BottomDock({
   onSubModeChange,
   showSubMode = false,
   isAttachmentUploading = false,
+  language = "english",
+  onLanguageChange,
+  boardLanguage = "english",
+  onBoardLanguageChange,
+  isLoggedIn = false,
+  isCanvasActive = false,
+  onToggleCanvas,
 }: BottomDockProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<HTMLDivElement>(null);
   const subModeRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState<"voice" | "language" | "board" | null>(null);
   const [subModeOpen, setSubModeOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
+  const [selectedHinglishVoice, setSelectedHinglishVoice] = useState(getSavedHinglishVoiceId);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
-  const selectVoice = (id: string) => {
-    saveVoiceId(id);
-    setSelectedVoice(id);
-    setVoiceOpen(false);
+  const activeVoices = (language === "hinglish" || language === "hindi") ? HINGLISH_VOICES : PRESET_VOICES;
+  const activeSelectedId = (language === "hinglish" || language === "hindi") ? selectedHinglishVoice : selectedVoice;
+
+  const stopPreview = () => {
+    if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current = null; }
+    setPreviewingVoiceId(null);
   };
 
-  const currentVoice = PRESET_VOICES.find(v => v.id === selectedVoice);
+  const handlePreview = (voiceId: string, filename: string) => {
+    if (previewingVoiceId === voiceId) { stopPreview(); return; }
+    stopPreview();
+    setPreviewingVoiceId(voiceId);
+    const audio = new Audio(`/voice-previews/${filename}.mp3`);
+    previewAudioRef.current = audio;
+    const clear = () => { if (previewAudioRef.current === audio) { previewAudioRef.current = null; setPreviewingVoiceId(null); } };
+    audio.onended = clear;
+    audio.onerror = clear;
+    audio.play().catch(clear);
+  };
+
+  const selectVoice = (id: string) => {
+    stopPreview();
+    if (language === "hinglish" || language === "hindi") {
+      saveHinglishVoiceId(id);
+      setSelectedHinglishVoice(id);
+    } else {
+      saveVoiceId(id);
+      setSelectedVoice(id);
+    }
+    setOpen(false);
+    setHovered(null);
+  };
+
+  const currentVoice = activeVoices.find(v => v.id === activeSelectedId);
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (!voiceRef.current?.contains(e.target as Node)) setVoiceOpen(false);
+      if (!voiceRef.current?.contains(e.target as Node)) { stopPreview(); setOpen(false); setHovered(null); }
       if (!subModeRef.current?.contains(e.target as Node)) setSubModeOpen(false);
     };
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, []);
+
+  useEffect(() => () => stopPreview(), []);
 
   // Auto-resize textarea when text changes (including voice input)
   useEffect(() => {
@@ -162,20 +202,40 @@ export function BottomDock({
           onChange={handleFileChange}
           disabled={disabled || isAttachmentUploading}
         />
-        <motion.button
-          type="button"
-          whileTap={{ scale: isAttachmentUploading ? 1 : 0.85 }}
-          onClick={() => !isAttachmentUploading && fileRef.current?.click()}
-          disabled={disabled || isAttachmentUploading}
-          aria-label={isAttachmentUploading ? "Uploading…" : "Upload image or PDF"}
-          title={isAttachmentUploading ? "Uploading file…" : undefined}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white/65 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isAttachmentUploading
-            ? <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-            : <Paperclip className="h-4 w-4" />
-          }
-        </motion.button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <motion.button
+            type="button"
+            whileTap={{ scale: isAttachmentUploading ? 1 : 0.85 }}
+            onClick={() => !isAttachmentUploading && fileRef.current?.click()}
+            disabled={disabled || isAttachmentUploading}
+            aria-label={isAttachmentUploading ? "Uploading…" : "Upload image or PDF"}
+            title={isAttachmentUploading ? "Uploading file…" : undefined}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white/65 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isAttachmentUploading
+              ? <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+              : <Paperclip className="h-4 w-4" />
+            }
+          </motion.button>
+
+          {/* Canvas toggle — desktop only */}
+          {onToggleCanvas && (
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.85 }}
+              onClick={onToggleCanvas}
+              aria-label={isCanvasActive ? "Exit drawing mode" : "Draw on board"}
+              title={isCanvasActive ? "Exit drawing mode" : "Draw on board"}
+              className={`max-[767px]:hidden flex h-9 w-9 items-center justify-center rounded-xl transition-all ${
+                isCanvasActive
+                  ? "bg-blue-400/30 text-blue-400 hover:bg-blue-400/40"
+                  : "text-white/35 hover:bg-white/8 hover:text-white/65"
+              }`}
+            >
+              <PencilLine className="h-4 w-4" />
+            </motion.button>
+          )}
+        </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {attachments.length > 0 && (
@@ -219,7 +279,7 @@ export function BottomDock({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}
-            className="resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed text-white/88 placeholder:text-white/22 focus:outline-none disabled:opacity-35"
+            className="resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-35"
             style={{ lineHeight: "1.5rem" }}
           />
         </div>
@@ -233,65 +293,172 @@ export function BottomDock({
               onClick={() => setSubModeOpen(o => !o)}
               className="flex h-9 items-center gap-1 rounded-xl px-2 text-white/35 transition-all hover:bg-white/8 hover:text-white/65"
             >
-              <span className="text-[11px] font-semibold">{subMode === "3d" ? "3D" : "Gen"}</span>
+              <span className="text-[11px] font-semibold">{subMode === "3d" ? "3D" : subMode === "2d" ? "2D" : "Gen"}</span>
               <ChevronDown className={`h-3 w-3 transition-transform ${subModeOpen ? "rotate-180" : ""}`} />
             </motion.button>
             {subModeOpen && (
-              <div className="absolute bottom-full left-0 mb-2 z-50 w-40 rounded-xl overflow-hidden"
+              <div className="absolute bottom-full left-0 mb-2 z-50 w-52 rounded-xl overflow-hidden"
                 style={{ background: "rgba(18,18,18,0.95)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 -8px 32px rgba(0,0,0,0.6)" }}
               >
-                {(["general", "3d"] as const).map(m => (
-                  <button key={m} onClick={() => { onSubModeChange?.(m); setSubModeOpen(false); }}
-                    className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-white/90">{m === "3d" ? "3D Visualization" : "General"}</p>
-                        {m === "3d" && <span className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400">Beta</span>}
-                      </div>
-                      <p className="text-[11px] text-white/40">{m === "3d" ? "Experimental — try & share feedback" : "Text & math"}</p>
+                {/* General */}
+                <button onClick={() => { onSubModeChange?.("general"); setSubModeOpen(false); }}
+                  className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-white/90">General</p>
+                    <span className="text-[11px] text-white/35">text & math</span>
+                  </div>
+                  {subMode === "general" && <Check size={13} className="text-emerald-400" />}
+                </button>
+                {/* Experimental with 2D/3D toggle */}
+                <div className="px-3 py-2 hover:bg-white/5 transition-colors">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                      {(["2d", "3d"] as const).map(m => (
+                        <button key={m} onClick={(e) => { e.stopPropagation(); onSubModeChange?.(m); setSubModeOpen(false); }}
+                          className={`px-2.5 py-1 text-[11px] font-bold transition-all ${subMode === m ? "bg-white/20 text-white" : "text-white/35 hover:text-white/60"}`}
+                        >{m.toUpperCase()}</button>
+                      ))}
                     </div>
-                    {subMode === m && <Check size={13} className="shrink-0 text-emerald-400" />}
-                  </button>
-                ))}
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400">Beta</span>
+                      {(subMode === "2d" || subMode === "3d") && <Check size={13} className="text-emerald-400" />}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Voice picker */}
+        {/* Voice + Language picker */}
         <div ref={voiceRef} className={`relative shrink-0 ${disabled ? "opacity-30 pointer-events-none" : ""}`}>
           <motion.button
             type="button"
             whileTap={{ scale: 0.85 }}
-            onClick={() => setVoiceOpen(o => !o)}
+            onClick={() => { setOpen(o => !o); setHovered(null); }}
             className="flex h-9 items-center gap-1 rounded-xl px-2 text-white/35 transition-all hover:bg-white/8 hover:text-white/65"
           >
-            <Mic2 className="h-3.5 w-3.5" />
-            <span className="text-[11px] font-semibold">{currentVoice?.name ?? "Voice"}</span>
-            <ChevronDown className={`h-3 w-3 transition-transform ${voiceOpen ? "rotate-180" : ""}`} />
+            <AudioLines className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-semibold">
+              {currentVoice?.name ?? "Voice"}
+              {language === "hinglish" && <span className="ml-1 text-orange-400">· HI</span>}
+              {language === "hindi" && <span className="ml-1 text-orange-400">· हि</span>}
+            </span>
+            <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
           </motion.button>
 
-          {voiceOpen && (
-            <div className="absolute bottom-full right-0 mb-2 z-50 w-52 rounded-xl overflow-hidden max-sm:right-auto max-sm:left-0 max-sm:w-[min(208px,calc(100vw-32px))]"
-              style={{
-                background: "rgba(18,18,18,0.95)",
-                backdropFilter: "blur(20px)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                boxShadow: "0 -8px 32px rgba(0,0,0,0.6)",
-              }}
+          {open && (
+            <div className="absolute bottom-full right-0 mb-2 z-50 w-48 rounded-xl overflow-hidden"
+              style={{ background: "rgba(18,18,18,0.95)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 -8px 32px rgba(0,0,0,0.6)" }}
             >
-              {PRESET_VOICES.map(v => (
-                <button key={v.id} onClick={() => selectVoice(v.id)}
-                  className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
-                >
+              {/* Voice */}
+              <button
+                onClick={() => setHovered(h => h === "voice" ? null : "voice")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+              >
+                <div className="flex items-center gap-2">
+                  <AudioLines size={13} className="text-white/40" />
                   <div>
-                    <p className="text-sm font-semibold text-white/90">{v.name}</p>
-                    <p className="text-[11px] text-white/40">{v.desc}</p>
+                    <p className="text-sm font-semibold text-white/90">Voice</p>
+                    <p className="text-[11px] text-white/35">{currentVoice?.name ?? "—"}</p>
                   </div>
-                  {selectedVoice === v.id && <Check size={13} className="shrink-0 text-emerald-400" />}
-                </button>
-              ))}
+                </div>
+                <ChevronDown size={13} className={`text-white/30 transition-transform ${hovered === "voice" ? "rotate-180" : ""}`} />
+              </button>
+              {hovered === "voice" && (
+                <div className="border-t border-white/5">
+                  {activeVoices.map(v => {
+                    const isPreviewing = previewingVoiceId === v.id;
+                    return (
+                      <div key={v.id} className="flex items-center transition-colors hover:bg-white/8">
+                        <button onClick={() => selectVoice(v.id)} className="flex flex-1 items-center justify-between pl-4 pr-1 py-2 text-left">
+                          <div>
+                            <p className="text-sm font-semibold text-white/80">{v.name}</p>
+                            <p className="text-[11px] text-white/35">{v.desc}</p>
+                          </div>
+                          {activeSelectedId === v.id && <Check size={13} className="shrink-0 text-emerald-400 ml-1" />}
+                        </button>
+                        {isLoggedIn && (
+                          <button onClick={(e) => { e.stopPropagation(); handlePreview(v.id, v.name.toLowerCase()); }}
+                            className="shrink-0 px-2.5 py-2 text-white/25 hover:text-white/70 transition-colors"
+                          >
+                            {isPreviewing ? <Square size={10} className="fill-current text-emerald-400" /> : <Play size={10} className="fill-current" />}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Language */}
+              <button
+                onClick={() => setHovered(h => h === "language" ? null : "language")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px]">🌐</span>
+                  <div>
+                    <p className="text-sm font-semibold text-white/90">Language</p>
+                    <p className="text-[11px] text-white/35">{language === "hinglish" ? "Hinglish" : language === "hindi" ? "Hindi" : "English"}</p>
+                  </div>
+                </div>
+                <ChevronDown size={13} className={`text-white/30 transition-transform ${hovered === "language" ? "rotate-180" : ""}`} />
+              </button>
+              {hovered === "language" && (
+                <div className="border-t border-white/5">
+                  {([
+                    { id: "english",  label: "English",  desc: "Speak in English" },
+                    { id: "hinglish", label: "Hinglish", desc: "Hindi + English terms" },
+                    { id: "hindi",    label: "Hindi",    desc: "Pure Hindi Devanagari" },
+                  ] as const).map(l => (
+                    <button key={l.id} onClick={() => { onLanguageChange?.(l.id); setOpen(false); setHovered(null); }}
+                      className="flex w-full items-center justify-between pl-4 pr-3 py-2 text-left transition-colors hover:bg-white/8"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-white/80">{l.label}</p>
+                        <p className="text-[11px] text-white/35">{l.desc}</p>
+                      </div>
+                      {language === l.id && <Check size={13} className="shrink-0 text-orange-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Board */}
+              <button
+                onClick={() => setHovered(h => h === "board" ? null : "board")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-white/8"
+              >
+                <div className="flex items-center gap-2">
+                  <LayoutGrid size={13} className="text-white/40" />
+                  <div>
+                    <p className="text-sm font-semibold text-white/90">Board</p>
+                    <p className="text-[11px] text-white/35">{boardLanguage === "hinglish" ? "Hinglish" : boardLanguage === "hindi" ? "Hindi" : "English"}</p>
+                  </div>
+                </div>
+                <ChevronDown size={13} className={`text-white/30 transition-transform ${hovered === "board" ? "rotate-180" : ""}`} />
+              </button>
+              {hovered === "board" && (
+                <div className="border-t border-white/5">
+                  {([
+                    { id: "english",  label: "English",  desc: "Board content in English" },
+                    { id: "hinglish", label: "Hinglish", desc: "Terms English · text Hindi" },
+                    { id: "hindi",    label: "Hindi",    desc: "Board content in Devanagari" },
+                  ] as const).map(l => (
+                    <button key={l.id} onClick={() => { onBoardLanguageChange?.(l.id); setOpen(false); setHovered(null); }}
+                      className="flex w-full items-center justify-between pl-4 pr-3 py-2 text-left transition-colors hover:bg-white/8"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-white/80">{l.label}</p>
+                        <p className="text-[11px] text-white/35">{l.desc}</p>
+                      </div>
+                      {boardLanguage === l.id && <Check size={13} className="shrink-0 text-violet-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -92,7 +92,7 @@ export function CommunityNotesView() {
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<CommunityNote[]>([]);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const PAGE_SIZE = 20;
   const isSearching = search.trim().length > 0;
@@ -114,7 +114,7 @@ export function CommunityNotesView() {
     const votesRef = collection(db, "users", user.uid, "communityVotes");
     const unsub = onSnapshot(votesRef, snap => {
       setUserVotes(new Set(snap.docs.map(d => d.id)));
-    });
+    }, () => { /* non-fatal — votes show as uncast */ });
     return () => unsub();
   }, [user?.uid]);
 
@@ -215,8 +215,12 @@ export function CommunityNotesView() {
     if (navigator.share && isMobile) {
       try { await navigator.share({ title: note.title, text, url }); } catch { /* cancelled */ }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied!");
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied!");
+      } catch {
+        toast.error("Couldn't copy link — try manually");
+      }
     }
   };
 

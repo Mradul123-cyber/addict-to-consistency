@@ -4,13 +4,13 @@ export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
       { title: "Privacy Policy — Matrix" },
-      { name: "description", content: "Privacy Policy for Matrix — AI-powered JEE preparation platform." },
+      { name: "description", content: "Privacy Policy for Matrix — AI-powered study platform." },
     ],
   }),
   component: PrivacyPage,
 });
 
-const LAST_UPDATED = "June 3, 2025";
+const LAST_UPDATED = "June 7, 2025";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -53,143 +53,88 @@ function PrivacyPage() {
         <p className="text-xs text-muted-foreground">Last updated: {LAST_UPDATED}</p>
       </div>
 
-      <div className="space-y-10">
+      <div className="space-y-8">
 
         <Section title="Introduction">
           <P>
-            Matrix ("we", "our", or "us") is an AI-powered study platform built for JEE aspirants.
-            We take your privacy seriously. This policy explains what information we collect, how we use it,
-            and the choices you have. By using Matrix, you agree to the practices described here.
+            Matrix is an AI-powered study platform for students. This policy explains what data
+            we collect, how we use it, and your choices. By using Matrix, you agree to these practices.
           </P>
         </Section>
 
         <Section title="Information We Collect">
-          <P><strong className="text-foreground">Account information</strong></P>
-          <Ul items={[
-            "Your email address and display name when you create an account.",
-            "Profile preferences such as your daily study goal and selected subjects.",
-          ]} />
-
-          <P><strong className="text-foreground">Study activity</strong></P>
-          <Ul items={[
-            "Focus session logs — subject, duration, and timestamps.",
-            "Chapter and concept progress you mark within the app.",
-            "Study streaks and calendar data.",
-            "Notes you write or submit for community review.",
-          ]} />
-
-          <P><strong className="text-foreground">AI teaching sessions</strong></P>
-          <Ul items={[
-            "Questions you ask the AI teaching board and the board content generated in response.",
-            "Files you upload (images or PDFs) to get help with — these are processed to extract context and are not stored permanently beyond your session.",
-            "Your chosen voice preference for AI explanations.",
-          ]} />
-
-          <P><strong className="text-foreground">Technical information</strong></P>
-          <Ul items={[
-            "Your IP address — used solely to prevent abuse of our free features (e.g., creating many accounts to bypass limits). It is never used for advertising or sold.",
-            "A device identifier stored locally on your device — used to prevent abuse on the same device. This data stays on your device and is not linked to your identity.",
-            "Basic usage counts (number of AI prompts used, uploads used) to enforce free plan limits.",
-          ]} />
+          <P><strong className="text-foreground">Account</strong> — email, display name, daily study goal, and selected subjects.</P>
+          <P><strong className="text-foreground">Study activity</strong> — focus session logs, chapter progress, streaks, and community notes.</P>
+          <P><strong className="text-foreground">AI sessions</strong> — questions asked, board content generated, and voice preference. Files you upload (images/PDFs) are processed in the moment and not retained after your session.</P>
+          <P><strong className="text-foreground">Abuse prevention</strong> — IP address and a device identifier stored locally on your device. Neither is used for advertising or linked to your identity beyond enforcing free-tier limits.</P>
         </Section>
 
         <Section title="How We Use Your Information">
           <Ul items={[
-            "To provide and improve the Matrix learning experience.",
-            "To track your study progress and show you your own stats.",
-            "To power the AI teaching board with context from your session.",
-            "To enforce fair usage limits and prevent abuse of free features.",
-            "To send important account-related communications (no marketing emails without your consent).",
+            "Deliver and improve the Matrix learning experience.",
+            "Show you your own study progress and stats.",
+            "Power the AI teaching board with session context.",
+            "Enforce fair usage limits and prevent abuse.",
+            "Send account-related emails (e.g. password resets, policy updates) — no promotional emails without your consent.",
           ]} />
         </Section>
 
         <Section title="Information Sharing">
           <P>
-            We do not sell your personal information. We do not share your data with advertisers or
-            data brokers. Your data may be shared only in these limited cases:
+            We do not sell your data or share it with advertisers. Data is shared only with trusted
+            infrastructure providers (auth, storage, AI, voice) under strict data-protection agreements,
+            when required by law, or in a merger/acquisition under the same privacy commitments.
           </P>
-          <Ul items={[
-            "With trusted technology providers who help us run the platform (authentication, data storage, AI processing, voice synthesis). These providers are bound by strict data protection agreements and may only use your data to provide services to us.",
-            "If required by law, court order, or to protect the rights and safety of our users.",
-            "In the event of a merger or acquisition, your data would transfer to the new entity under the same privacy commitments.",
-          ]} />
         </Section>
 
-        <Section title="Data Retention">
+        <Section title="Data Retention & Storage">
           <P>
-            We retain your account and study data for as long as your account is active.
-            You may request deletion of your account and associated data at any time by contacting us.
-            AI session content is stored to allow you to revisit past sessions; you can delete individual
-            sessions from within the app at any time.
-          </P>
-          <P>
-            Files you upload for AI assistance (images, PDFs) are processed in the moment and are not
-            retained on our servers after your session ends.
+            Account and study data is kept while your account is active. You can delete your account
+            and all associated data at any time by contacting us. AI session content can be deleted
+            individually from within the app. We use browser local storage for preferences (theme, voice) — no third-party tracking
+            or advertising cookies.
           </P>
         </Section>
 
         <Section title="Your Rights">
-          <P>You have the right to:</P>
           <Ul items={[
             "Access the personal information we hold about you.",
-            "Request correction of inaccurate data.",
-            "Request deletion of your account and data.",
-            "Withdraw consent at any time where processing is based on consent.",
+            "Request correction or deletion of your data.",
+            "Withdraw consent at any time where processing is consent-based.",
           ]} />
-          <P>To exercise any of these rights, contact us at the email below.</P>
+          <P>To exercise these rights, email us at the address below.</P>
         </Section>
 
         <Section title="Children's Privacy">
           <P>
-            Matrix is designed for students preparing for competitive exams, many of whom may be under 18.
-            We do not knowingly collect any sensitive personal information beyond what is necessary to
-            provide the service. We do not run ads, build behavioral profiles, or share student data
-            with third parties for commercial purposes.
-          </P>
-          <P>
-            If you are a parent or guardian and believe your child has provided us with information
-            without your consent, please contact us and we will promptly address it.
-          </P>
-        </Section>
-
-        <Section title="Security">
-          <P>
-            We use industry-standard security practices to protect your data, including encrypted
-            data transmission and access controls. No system is completely secure, but we continually
-            work to protect your information. If you discover a security issue, please report it to us.
-          </P>
-        </Section>
-
-        <Section title="Cookies and Local Storage">
-          <P>
-            Matrix uses browser local storage to remember your preferences (such as theme and voice
-            settings) across sessions. We do not use third-party tracking cookies or advertising cookies.
+            Many Matrix users are under 18. We collect only what is necessary to provide the service —
+            no ads, no behavioral profiling, no sharing with third parties for commercial purposes.
+            Parents or guardians with concerns can contact us and we will promptly address them.
           </P>
         </Section>
 
         <Section title="Changes to This Policy">
           <P>
-            We may update this policy as our product evolves. When we make significant changes, we will
-            update the date at the top of this page. Continued use of Matrix after changes are posted
-            constitutes your acceptance of the updated policy.
+            We may update this policy as the product evolves. Significant changes will be reflected
+            in the date at the top of this page. Continued use constitutes acceptance.
           </P>
         </Section>
 
-        <Section title="Contact Us">
+        <Section title="Contact">
           <P>
-            If you have questions about this policy, want to exercise your rights, or need to report
-            a concern, please reach out. We aim to respond within 2 business days.
-          </P>
-          <P>
-            Once we have our dedicated support email set up, it will be listed here. In the meantime,
-            you can reach us through the app.
+            Questions, rights requests, or security concerns — email us at{" "}
+            <a href="mailto:mradulagrawal48125@gmail.com" className="text-foreground underline underline-offset-2">
+              mradulagrawal48125@gmail.com
+            </a>
+            . We aim to respond within 2 business days.
           </P>
         </Section>
 
       </div>
 
-      <div className="mt-12 border-t border-border pt-6 text-xs text-muted-foreground">
-        © {new Date().getFullYear()} Matrix. All rights reserved.
+      <div className="mt-12 border-t border-border pt-6 flex items-center justify-between text-xs text-muted-foreground">
+        <span>© {new Date().getFullYear()} Matrix. All rights reserved.</span>
+        <Link to="/terms" className="hover:text-foreground transition-colors">Terms & Conditions</Link>
       </div>
     </div>
   );

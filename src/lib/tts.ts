@@ -1,17 +1,51 @@
 // ── IndexedDB audio cache ─────────────────────────────────────────────────────
-// L1: in-memory Map → L2: IndexedDB → L3: Worker → ElevenLabs
+// L1: in-memory Map → L2: IndexedDB (30-day TTL) → L3: Worker → ElevenLabs
 // Cache key includes voiceId so switching voices doesn't serve stale audio.
+// Replay (replayMode=true) never calls ElevenLabs — silently skips missing audio.
 
 const DB_NAME = "jee-tts-cache";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "audio";
+const TS_STORE = "timestamps"; // parallel store: key → epoch ms written
+const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+let cleanupRan = false;
 
 async function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
-    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = (e.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      if (!db.objectStoreNames.contains(TS_STORE))   db.createObjectStore(TS_STORE);
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      if (!cleanupRan) { cleanupRan = true; void purgeExpired(db); }
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
+  });
+}
+
+function purgeExpired(db: IDBDatabase): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction([STORE_NAME, TS_STORE], "readwrite");
+      const tsStore = tx.objectStore(TS_STORE);
+      const cutoff = Date.now() - TTL_MS;
+      const req = tsStore.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null;
+        if (!cursor) { resolve(); return; }
+        if ((cursor.value as number) < cutoff) {
+          tx.objectStore(STORE_NAME).delete(cursor.key);
+          cursor.delete();
+        }
+        cursor.continue();
+      };
+      req.onerror = () => resolve();
+    } catch { resolve(); }
   });
 }
 
@@ -31,8 +65,9 @@ async function idbSet(key: string, value: ArrayBuffer): Promise<void> {
   try {
     const db = await openDb();
     return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
+      const tx = db.transaction([STORE_NAME, TS_STORE], "readwrite");
       tx.objectStore(STORE_NAME).put(value, key);
+      tx.objectStore(TS_STORE).put(Date.now(), key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
     });
@@ -50,12 +85,28 @@ export const PRESET_VOICES = [
   { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", desc: "British · Authoritative" },
   { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "American · Clear" },
   { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Assertive" },
-  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Strong · Firm" },
-  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", desc: "Warm · Natural" },
+] as const;
+
+// Indian male voices — add these to your account at elevenlabs.io/voice-library first
+export const HINGLISH_VOICES = [
+  { id: "pq8ptAFvXx1MBHKzOrML", name: "Ishaan", desc: "Indian · Teaching" },
+  { id: "E5Qzcir7Cv8tZdPyn2it", name: "Karn",   desc: "Indian · E-Learning" },
+  { id: "DP7PNHpRD6HfosXDaGHq", name: "Arjun",  desc: "Indian · Narrator" },
 ] as const;
 
 const VOICE_KEY = "jee-voice-id";
-const DEFAULT_VOICE_ID = PRESET_VOICES[0].id; // Daniel
+const HINGLISH_VOICE_KEY = "jee-voice-hi";
+const DEFAULT_VOICE_ID = PRESET_VOICES[0].id;
+const DEFAULT_HINGLISH_VOICE_ID = HINGLISH_VOICES[0].id;
+
+export function getSavedHinglishVoiceId(): string {
+  try { return localStorage.getItem(HINGLISH_VOICE_KEY) || DEFAULT_HINGLISH_VOICE_ID; }
+  catch { return DEFAULT_HINGLISH_VOICE_ID; }
+}
+
+export function saveHinglishVoiceId(id: string): void {
+  try { localStorage.setItem(HINGLISH_VOICE_KEY, id); } catch {}
+}
 
 export function getSavedVoiceId(): string {
   try { return localStorage.getItem(VOICE_KEY) || DEFAULT_VOICE_ID; }
@@ -78,19 +129,170 @@ const memCache = new Map<string, AudioBuffer>();
 
 export function setReplayMode(on: boolean) { replayMode = on; }
 
+// ── Missed-chunk tracking (per-response background fill) ──────────────────────
+
+interface MissedChunk { text: string; language?: "english" | "hinglish" | "hindi" }
+const _missedChunks: MissedChunk[] = [];
+let _bgFillRunning = false;
+let _bgFillDone = false;
+
+export function resetTTSMissedQueue(): void {
+  _missedChunks.length = 0;
+  _bgFillRunning = false;
+  _bgFillDone = false;
+}
+export function hasMissedTTSChunks(): boolean { return _missedChunks.length > 0; }
+export function isTTSBackgroundFillDone(): boolean { return _bgFillDone; }
+
+export async function startTTSBackgroundFill(
+  idToken: string | null,
+  onComplete: () => void,
+): Promise<void> {
+  if (_bgFillRunning || _missedChunks.length === 0) { onComplete(); return; }
+  _bgFillRunning = true;
+  const queue = [..._missedChunks];
+  for (const chunk of queue) {
+    await prefetchAudio(chunk.text, idToken, chunk.language);
+    await new Promise<void>(r => setTimeout(r, 300));
+  }
+  _bgFillDone = true;
+  _bgFillRunning = false;
+  onComplete();
+}
+
 function getAudioCtx(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext();
   return audioCtx;
 }
 
-// ── Main speak function ───────────────────────────────────────────────────────
+// ── Speak text normalization ──────────────────────────────────────────────────
+// Expands abbreviations ElevenLabs mispronounces into their spoken forms.
+// Applied before cache key + API call so normalized text is what gets cached.
 
-export async function speakElement(text: string): Promise<void> {
-  const trimmed = text.trim();
+function normalizeSpeakText(text: string): string {
+  return text
+    // Compound units first (order matters — km before m, kHz before Hz)
+    .replace(/\bkm\/h\b/gi, "kilometers per hour")
+    .replace(/\bm\/s²\b/g, "meters per second squared")
+    .replace(/\bm\/s\b/g, "meters per second")
+    .replace(/\bkm\b/g, "kilometers")
+    .replace(/\bcm\b/g, "centimeters")
+    .replace(/\bmm\b/g, "millimeters")
+    .replace(/\bμm\b/g, "micrometers")
+    .replace(/\bnm\b/g, "nanometers")
+    .replace(/\bkg\b/g, "kilograms")
+    .replace(/\bmg\b/g, "milligrams")
+    .replace(/\bμg\b/g, "micrograms")
+    .replace(/\bkJ\b/g, "kilojoules")
+    .replace(/\bmJ\b/g, "millijoules")
+    .replace(/\beV\b/g, "electron volts")
+    .replace(/\bkeV\b/g, "kilo electron volts")
+    .replace(/\bMeV\b/g, "mega electron volts")
+    .replace(/\bkHz\b/g, "kilohertz")
+    .replace(/\bMHz\b/g, "megahertz")
+    .replace(/\bGHz\b/g, "gigahertz")
+    .replace(/\bkW\b/g, "kilowatts")
+    .replace(/\bmW\b/g, "milliwatts")
+    .replace(/\bkV\b/g, "kilovolts")
+    .replace(/\bmV\b/g, "millivolts")
+    .replace(/\bkΩ\b/g, "kilohms")
+    .replace(/\bMΩ\b/g, "megaohms")
+    .replace(/\bμF\b/g, "microfarads")
+    .replace(/\bnF\b/g, "nanofarads")
+    .replace(/\bpF\b/g, "picofarads")
+    .replace(/\bmA\b/g, "milliamperes")
+    .replace(/\bμA\b/g, "microamperes")
+    .replace(/\bkPa\b/g, "kilopascals")
+    .replace(/\bMPa\b/g, "megapascals")
+    .replace(/\bmol\b/g, "moles")
+    .replace(/\bmL\b/g, "milliliters")
+    // Simple units
+    .replace(/\bHz\b/g, "Hertz")
+    .replace(/\bPa\b/g, "Pascals")
+    .replace(/\bJ\b/g, "Joules")
+    .replace(/\bW\b/g, "Watts")
+    .replace(/\bΩ\b/g, "Ohms")
+    .replace(/\bT\b/g, "Tesla")
+    .replace(/\bK\b/g, "Kelvin")
+    .replace(/\b°C\b/g, "degrees Celsius")
+    .replace(/\b°F\b/g, "degrees Fahrenheit")
+    .replace(/\batm\b/g, "atmospheres")
+    // Common abbreviations
+    .replace(/\bvs\.?\b/gi, "versus")
+    .replace(/\be\.g\.?\b/gi, "for example")
+    .replace(/\bi\.e\.?\b/gi, "that is")
+    .replace(/\bJEE\b/g, "J E E")
+    .replace(/\bNEET\b/g, "N E E T")
+    // Greek letters that might appear in speak text
+    .replace(/\bα\b/g, "alpha")
+    .replace(/\bβ\b/g, "beta")
+    .replace(/\bγ\b/g, "gamma")
+    .replace(/\bλ\b/g, "lambda")
+    .replace(/\bμ\b/g, "mu")
+    .replace(/\bω\b/g, "omega")
+    .replace(/\bθ\b/g, "theta")
+    .replace(/\bφ\b/g, "phi")
+    .replace(/\bσ\b/g, "sigma")
+    .replace(/\bπ\b/g, "pi")
+    // Math symbols
+    .replace(/\b∞\b/g, "infinity")
+    .replace(/√/g, "root of")
+    .replace(/²/g, " squared")
+    .replace(/³/g, " cubed")
+    .replace(/%/g, "percent");
+}
+
+// ── Prefetch: fetch + cache audio without playing ─────────────────────────────
+// Fire-and-forget while current element plays. speakElement() hits cache instantly.
+
+export async function prefetchAudio(
+  text: string,
+  idToken: string | null,
+  language?: "english" | "hinglish" | "hindi",
+): Promise<void> {
+  if (replayMode) return;
+  const trimmed = normalizeSpeakText(text.trim());
   if (!trimmed) return;
 
   const workerUrl = import.meta.env.VITE_WORKER_URL;
-  const voiceId = getSavedVoiceId();
+  const voiceId = (language === "hinglish" || language === "hindi") ? getSavedHinglishVoiceId() : getSavedVoiceId();
+  const key = await textToKey(trimmed, voiceId);
+
+  if (memCache.has(key)) return;
+  const stored = await idbGet(key);
+  if (stored) {
+    try {
+      const audioBuffer = await getAudioCtx().decodeAudioData(stored.slice(0));
+      memCache.set(key, audioBuffer);
+    } catch { /* corrupt cache entry — will re-fetch on play */ }
+    return;
+  }
+
+  try {
+    const response = await fetch(`${workerUrl}/api/tts`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
+    });
+    if (!response.ok) return;
+    const rawBuffer = await response.arrayBuffer();
+    void idbSet(key, rawBuffer.slice(0));
+    const audioBuffer = await getAudioCtx().decodeAudioData(rawBuffer);
+    memCache.set(key, audioBuffer);
+  } catch { /* non-fatal — speakElement will retry on play */ }
+}
+
+// ── Main speak function ───────────────────────────────────────────────────────
+
+export async function speakElement(text: string, idToken?: string | null, speed = 1, language?: "english" | "hinglish" | "hindi"): Promise<void> {
+  const trimmed = normalizeSpeakText(text.trim());
+  if (!trimmed) return;
+
+  const workerUrl = import.meta.env.VITE_WORKER_URL;
+  const voiceId = (language === "hinglish" || language === "hindi") ? getSavedHinglishVoiceId() : getSavedVoiceId();
 
   const speechId = ++activeSpeechId;
   stopCurrentSpeech();
@@ -113,10 +315,17 @@ export async function speakElement(text: string): Promise<void> {
         if (replayMode) return;
         const response = await fetch(`${workerUrl}/api/tts`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: trimmed, voiceId }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
         });
 
+        if (response.status === 429) {
+          _missedChunks.push({ text: trimmed, language });
+          return; // board renders silently — background fill will cache it later
+        }
         if (!response.ok) throw new Error(`TTS error: ${response.status}`);
 
         const rawBuffer = await response.arrayBuffer();
@@ -131,6 +340,7 @@ export async function speakElement(text: string): Promise<void> {
     return new Promise<void>((resolve) => {
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
+      source.playbackRate.value = speed;
       source.connect(ctx.destination);
       currentSourceNode = source;
 
@@ -158,3 +368,4 @@ export function stopCurrentSpeech() {
     currentSourceNode = null;
   }
 }
+

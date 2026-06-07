@@ -15,8 +15,10 @@ const quotaRef = (uid: string) => doc(db, "users", uid, "usage", "teach");
 export async function getTeachPromptCount(uid: string): Promise<number> {
   // Cache in sessionStorage — quota only changes after AI use (incrementTeachPromptCount clears cache)
   const cacheKey = `quota_${uid}`;
-  const cached = sessionStorage.getItem(cacheKey);
-  if (cached !== null) return Number(cached);
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached !== null) return Number(cached);
+  } catch { /* sessionStorage unavailable — fall through to Firestore */ }
 
   try {
     const snap = await getDoc(quotaRef(uid));
@@ -51,10 +53,6 @@ export async function incrementTeachPromptCount(uid: string): Promise<number> {
   }
 }
 
-export async function resetTeachPromptCount(uid: string): Promise<void> {
-  await updateDoc(quotaRef(uid), { promptCount: 0, updatedAt: serverTimestamp() });
-  sessionStorage.removeItem(`quota_${uid}`);
-}
 
 export interface TeachFeedback {
   reasons: string[];

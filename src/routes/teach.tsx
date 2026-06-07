@@ -4,7 +4,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { TeachBoard } from "@/components/teach/TeachBoard";
 import { BottomDock } from "@/components/teach/BottomDock";
 import { BoardRenderer, getWritingDuration } from "@/components/teach/BoardRenderer";
-import { speakElement, stopCurrentSpeech } from "@/lib/tts";
+import { speakElement, prefetchAudio, stopCurrentSpeech, resetTTSMissedQueue, hasMissedTTSChunks, startTTSBackgroundFill } from "@/lib/tts";
 import { ErrorCard } from "@/components/teach/ErrorCard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type {
@@ -27,16 +27,17 @@ import { FeedbackDialog } from "@/components/teach/FeedbackDialog";
 import { lazy } from "react";
 const UpgradeDialog = lazy(() => import("@/components/teach/UpgradeDialog").then(m => ({ default: m.UpgradeDialog })));
 const SessionHistory = lazy(() => import("@/components/teach/SessionHistory").then(m => ({ default: m.SessionHistory })));
+const FreeTierIntroDialog = lazy(() => import("@/components/teach/FreeTierIntroDialog").then(m => ({ default: m.FreeTierIntroDialog })));
 import { ModeSelector, getModeConfig } from "@/components/teach/ModeSelector";
-import type { TeachMode, SubMode } from "@/types/teach";
-import { createTeachSession, saveTeachSession, updateTeachSessionElements, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
+import { CanvasToolbar } from "@/components/teach/CanvasToolbar";
+import type { TeachMode, SubMode, CanvasTool, CanvasOverlayHandle } from "@/types/teach";
+import { CANVAS_BRUSH_SIZE_DEFAULT } from "@/types/teach";
+import { createTeachSession, appendSessionElements, updateSessionTitle, updateSessionElement, loadSessionElements, listTeachSessionsPaged, type TeachSession } from "@/lib/teach-sessions";
 import { setReplayMode } from "@/lib/tts";
 import { checkDeviceAllowed, registerDeviceUsage } from "@/lib/device-guard";
 import { captureScene, stopAllTypewriters } from "@/components/teach/BoardRenderer";
 import { toast } from "sonner";
-import { storage } from "@/lib/firebase";
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { RotateCcw, Square, Play, Pause, Sparkles, FileWarning, X } from "lucide-react";
+import { RotateCcw, Square, Play, Pause, Sparkles, FileWarning, X, Sun, Moon, Volume2, VolumeX, Gauge, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getAttachmentUsage, incrementAttachmentUsage, FREE_PDF_LIMIT, FREE_IMAGE_LIMIT } from "@/lib/attachment-quota";
 
@@ -241,11 +242,15 @@ export const Route = createFileRoute("/teach")({
 });
 
 function parseBoardElementJson(jsonStr: string) {
+  // Pre-fix: single \f,\n,\t,\b,\r before letters are LaTeX commands (\frac, \theta etc.)
+  // but JSON interprets them as control chars. Only fix SINGLE backslashes (not already-doubled \\frac).
+  // Negative lookbehind (?<!\\) prevents doubling already-correct double-escaped sequences.
+  const preFixed = jsonStr.replace(/(?<!\\)\\([fnrtb])(?=[a-zA-Z])/g, "\\\\$1");
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(preFixed);
   } catch (firstError) {
-    const escapedJsonStr = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
-    if (escapedJsonStr === jsonStr) {
+    const escapedJsonStr = preFixed.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+    if (escapedJsonStr === preFixed) {
       throw firstError;
     }
 
@@ -333,11 +338,29 @@ function useIsPortraitMobile() {
   return isPortrait;
 }
 
+// Covers portrait AND landscape mobile (header is hidden in both)
+function useIsMobileDevice() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && (window.innerWidth < 768 || window.innerHeight < 500)
+  );
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768 || window.innerHeight < 500);
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check);
+    return () => { window.removeEventListener("resize", check); window.removeEventListener("orientationchange", check); };
+  }, []);
+  return isMobile;
+}
+
 function TeachPage() {
   // ── UI state ──
-  const [boardConfig, setBoardConfig] = useState<BoardConfig>({
-    mode: "blackboard",
-    content: "",
+  const [boardConfig, setBoardConfig] = useState<BoardConfig>(() => {
+    try {
+      const saved = localStorage.getItem("teach-board-mode") as "blackboard" | "whiteboard" | null;
+      return { mode: saved ?? "blackboard", content: "" };
+    } catch {
+      return { mode: "blackboard", content: "" };
+    }
   });
   const [aiState, setAiState] = useState<AIState>("idle");
   const [elements, setElements] = useState<BoardElement[]>([]);
@@ -365,12 +388,63 @@ function TeachPage() {
   // ── TTS ──
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(ttsEnabled);
-  useEffect(() => {
-    ttsEnabledRef.current = ttsEnabled;
-  }, [ttsEnabled]);
+  useEffect(() => { ttsEnabledRef.current = ttsEnabled; }, [ttsEnabled]);
+
+  // ── TTS missed-chunk notification + replay confirmation ──
+  const [ttsDropNotice, setTtsDropNotice] = useState<null | "filling" | "ready">(null);
+  const [replayConfirmOpen, setReplayConfirmOpen] = useState(false);
+
+  // ── Per-element speak ──
+  const [elementSpeakEnabled, setElementSpeakEnabled] = useState(false);
+  const [speakingElementId, setSpeakingElementId] = useState<string | null>(null);
+  const blockSpeakAbortRef = useRef(false);
+
+  // ── Language (voice/speak) ──
+  const [language, setLanguage] = useState<"english" | "hinglish" | "hindi">(() => {
+    try { return (localStorage.getItem("teach-language") as "english" | "hinglish" | "hindi") ?? "english"; } catch { return "english"; }
+  });
+  const languageRef = useRef(language);
+  useEffect(() => { languageRef.current = language; }, [language]);
+  const handleLanguageChange = useCallback((l: "english" | "hinglish" | "hindi") => {
+    setLanguage(l);
+    languageRef.current = l;
+    try { localStorage.setItem("teach-language", l); } catch {}
+  }, []);
+
+  // ── Board language (what language board content is written in) ──
+  const [boardLanguage, setBoardLanguage] = useState<"english" | "hinglish" | "hindi">(() => {
+    try { return (localStorage.getItem("teach-board-language") as "english" | "hinglish" | "hindi") ?? "english"; } catch { return "english"; }
+  });
+  const boardLanguageRef = useRef(boardLanguage);
+  useEffect(() => { boardLanguageRef.current = boardLanguage; }, [boardLanguage]);
+  const handleBoardLanguageChange = useCallback((l: "english" | "hinglish" | "hindi") => {
+    setBoardLanguage(l);
+    boardLanguageRef.current = l;
+    try { localStorage.setItem("teach-board-language", l); } catch {}
+  }, []);
+
+  // ── Playback speed ──
+  const [speed, setSpeed] = useState<number>(() => {
+    try { return parseFloat(localStorage.getItem("teach-speed") || "1") || 1; } catch { return 1; }
+  });
+  const speedRef = useRef(speed);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  const handleSpeedChange = useCallback((s: number) => {
+    setSpeed(s);
+    speedRef.current = s;
+    try { localStorage.setItem("teach-speed", String(s)); } catch {}
+  }, []);
 
   // ── Error state ──
   const [errorText, setErrorText] = useState<string | null>(null);
+
+  // ── Canvas ──
+  const [isCanvasActive, setIsCanvasActive] = useState(false);
+  const [canvasTool, setCanvasTool] = useState<CanvasTool>("pen");
+  const [canvasColor, setCanvasColor] = useState("#ffffff");
+  const [brushSize, setBrushSize] = useState(CANVAS_BRUSH_SIZE_DEFAULT);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const canvasRef = useRef<CanvasOverlayHandle>(null);
 
   // ── Mode ──
   const [mode, setMode] = useState<TeachMode | null>(null);
@@ -397,6 +471,7 @@ function TeachPage() {
   const [boardInstant, setBoardInstant] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const currentSessionIdRef = useRef<string | null>(null);
+  const savedElementCountRef = useRef(0);
   const drainAbortRef = useRef(false);
   const drainPausedRef = useRef(false);
   const guestAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -445,6 +520,9 @@ function TeachPage() {
   const [promptCount, setPromptCount] = useState<number>(0);
   const [quotaLoaded, setQuotaLoaded] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [introOpen, setIntroOpen] = useState(() => {
+    try { return !localStorage.getItem("teach-intro-seen"); } catch { return false; }
+  });
   const promptCountRef = useRef(0);
   useEffect(() => {
     promptCountRef.current = promptCount;
@@ -550,11 +628,27 @@ function TeachPage() {
           delay = 900; // time for Three.js to render the new object
         }
 
-          const animPromise = new Promise<void>((resolve) => setTimeout(resolve, delay));
+          const animPromise = new Promise<void>((resolve) => setTimeout(resolve, Math.round(delay / speedRef.current)));
 
           const speakText = next.speak ?? ("content" in next ? next.content : "");
+          const usingFallback = !next.speak && "content" in next;
+          if (languageRef.current !== "english") {
+            console.log(`[TTS] type=${next.type} | fallback=${usingFallback} | lang=${languageRef.current} | text="${speakText.slice(0, 80)}"`);
+          }
           const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
-          const speakPromise = shouldSpeak ? speakElement(speakText) : Promise.resolve();
+          const speakToken = shouldSpeak && user ? await user.getIdToken() : null;
+          const speakPromise = shouldSpeak ? speakElement(speakText, speakToken, speedRef.current, languageRef.current) : Promise.resolve();
+
+          // Pipeline: pre-fetch next element's audio while current plays (all languages)
+          if (ttsEnabledRef.current && speakToken) {
+            const nextEl = pendingQueueRef.current[0];
+            if (nextEl) {
+              const nextSpeak = nextEl.speak ?? ("content" in nextEl ? nextEl.content : "");
+              if (nextSpeak.trim() && nextEl.type !== "ai_divider") {
+                void prefetchAudio(nextSpeak, speakToken, languageRef.current);
+              }
+            }
+          }
 
           // Interruptible await — stop/pause resolve this immediately
           await new Promise<void>((resolve) => {
@@ -592,11 +686,17 @@ function TeachPage() {
   }, []);
 
   // ── Board mode toggle ──
+  const handleCloseIntro = useCallback(() => {
+    setIntroOpen(false);
+    try { localStorage.setItem("teach-intro-seen", "1"); } catch {}
+  }, []);
+
   const handleToggleBoardMode = useCallback(() => {
-    setBoardConfig((prev) => ({
-      ...prev,
-      mode: prev.mode === "blackboard" ? "whiteboard" : "blackboard",
-    }));
+    setBoardConfig((prev) => {
+      const next = prev.mode === "blackboard" ? "whiteboard" : "blackboard";
+      try { localStorage.setItem("teach-board-mode", next); } catch {}
+      return { ...prev, mode: next };
+    });
   }, []);
 
   // ── Core streaming function ────────────────────────────────────────────────
@@ -605,6 +705,7 @@ function TeachPage() {
       messages: { role: string; content: string }[],
       requestAttachments: UploadedAttachment[] = []
     ) => {
+      setBoardInstant(false);
       const workerUrl = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
       try {
         // Get fresh Firebase ID token for server-side auth verification
@@ -627,6 +728,8 @@ function TeachPage() {
             mode: modeRef.current ?? "jee",
             subMode: subModeRef.current,
             uid: user?.uid,
+            language: languageRef.current,
+            boardLanguage: boardLanguageRef.current,
           }),
         });
 
@@ -697,6 +800,13 @@ function TeachPage() {
                   const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
                   const el: BoardElement = { ...parsed, id: nanoid() } as BoardElement;
                   pendingQueueRef.current.push(el);
+                  // Prefetch audio the moment element arrives — eliminates first-element gap
+                  if (ttsEnabledRef.current && el.type !== "ai_divider") {
+                    const elSpeak = (el as any).speak ?? ("content" in el ? (el as any).content : "");
+                    if (elSpeak?.trim()) {
+                      user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, languageRef.current)).catch(() => {});
+                    }
+                  }
                   void drainNext();
                 } catch (parseError) {
                   console.error("Failed to parse board element JSON:", jsonStr, parseError);
@@ -715,6 +825,12 @@ function TeachPage() {
               const parsed = parseBoardElementJson(jsonStr) as Omit<BoardElement, "id">;
               const el: BoardElement = { ...parsed, id: nanoid() } as BoardElement;
               pendingQueueRef.current.push(el);
+              if (ttsEnabledRef.current && el.type !== "ai_divider") {
+                const elSpeak = (el as any).speak ?? ("content" in el ? (el as any).content : "");
+                if (elSpeak?.trim()) {
+                  user?.getIdToken().then(tok => prefetchAudio(elSpeak, tok, languageRef.current)).catch(() => {});
+                }
+              }
               void drainNext();
             } catch (parseError) {
               console.error("Failed to parse final board element JSON:", jsonStr, parseError);
@@ -723,12 +839,33 @@ function TeachPage() {
         }
         const finalDrain = drainNext();
         await finalDrain;
+
+        // If any TTS chunks were dropped (429 TTS_BUSY), background-fill the cache
+        if (hasMissedTTSChunks()) {
+          setTtsDropNotice("filling");
+          const fillToken = user ? await user.getIdToken() : null;
+          void startTTSBackgroundFill(fillToken, () => {
+            setTtsDropNotice("ready");
+          });
+        }
+
         // Vision re-check any 3D scenes that were added in this response
         void verify3DScenes(elementsRef.current);
         return true;
       } catch (err: any) {
         console.error("Streaming error:", err);
-        setErrorText(err.message);
+        const msg: string = err?.message ?? "";
+        const friendly =
+          msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("network")
+            ? "Couldn't reach the server — check your internet connection."
+            : msg.includes("status 5") || msg.includes("500") || msg.includes("502") || msg.includes("503")
+            ? "The server ran into a problem. Please retry in a moment."
+            : msg.includes("status 4") || msg.includes("401") || msg.includes("403")
+            ? "Authentication error — try refreshing the page."
+            : msg.includes("body is not readable") || msg.includes("parse")
+            ? "Received an unexpected response. Please retry."
+            : "Something went wrong. Please retry.";
+        setErrorText(friendly);
         return false;
       } finally {
         setAiState("idle");
@@ -802,6 +939,10 @@ function TeachPage() {
       // Clear any prior error
       setErrorText(null);
 
+      // Reset TTS missed-chunk state for this new response
+      resetTTSMissedQueue();
+      setTtsDropNotice(null);
+
       // Clear pause if active
       drainPausedRef.current = false;
       setIsPaused(false);
@@ -851,16 +992,15 @@ function TeachPage() {
         const ok = await streamToBoard(messages, messageAttachments);
         if (!ok) return;
         try {
-        // Auto-save session after each successful AI response
-          const sessionId = currentSessionIdRef.current ?? nanoid();
-          if (!currentSessionIdRef.current) {
-            setCurrentSessionId(sessionId);
-            await createTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
-          } else {
-            await saveTeachSession(uid, sessionId, sessionTitle, elementsRef.current, modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
-          }
+          await saveSession(sessionTitle);
         } catch (e) {
           console.error("Failed to save session:", e);
+          toast.warning("Session couldn't be saved", {
+            action: {
+              label: "Retry",
+              onClick: () => { void saveSession(sessionTitle).catch(() => toast.error("Save failed again — check your connection")); },
+            },
+          });
         }
         try {
           // Worker already incremented Firestore — update local UI state only
@@ -870,15 +1010,23 @@ function TeachPage() {
           const remainingAfter = TEACH_PROMPT_LIMIT - next;
           if (next >= TEACH_PROMPT_LIMIT) {
             setFeedbackOpen(true);
-            // Delete from Firebase Storage
+            // Delete from R2
             const sessionStorageUrls = elementsRef.current
               .filter(el => el.type === "student_text")
               .flatMap(el => (el.attachments ?? []).map((a: UploadedAttachment) => a.storageUrl).filter(Boolean)) as string[];
             if (sessionStorageUrls.length > 0) {
-              sessionStorageUrls.forEach(url => {
-                const path = decodeURIComponent(url.split("/o/")[1]?.split("?")[0] ?? "");
-                if (path) deleteObject(storageRef(storage, path)).catch(() => {});
-              });
+              const workerBase = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
+              const delToken = user ? await user.getIdToken() : null;
+              if (delToken) {
+                sessionStorageUrls.forEach(key => {
+                  fetch(`${workerBase}/api/attachments/${encodeURIComponent(key)}`, {
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${delToken}` },
+                  }).then(res => {
+                    if (!res.ok) console.warn(`R2 delete failed for key ${key}: ${res.status}`);
+                  }).catch(err => console.warn("R2 delete error:", err));
+                });
+              }
               setFilesRemovedNotice(true);
             }
           } else if (remainingAfter === 2 || remainingAfter === 1) {
@@ -896,8 +1044,42 @@ function TeachPage() {
     [attachments, buildHistory, streamToBoard, quotaLoaded, user?.uid]
   );
 
+  // ── Save session (extracted so it can be retried independently) ─────────
+  const saveSession = useCallback(async (sessionTitle?: string) => {
+    const uid = user?.uid;
+    if (!uid) return;
+    const sessionId = currentSessionIdRef.current ?? nanoid();
+    const newElements = elementsRef.current.slice(savedElementCountRef.current);
+    if (!currentSessionIdRef.current) {
+      const now = Date.now();
+      const newSession: TeachSession = {
+        id: sessionId,
+        title: sessionTitle,
+        mode: modeRef.current ?? "jee",
+        subMode: subModeRef.current !== "general" ? subModeRef.current : undefined,
+        createdAt: now,
+        updatedAt: now,
+        elementCount: elementsRef.current.length,
+      };
+      await createTeachSession(uid, sessionId, sessionTitle, [], modeRef.current ?? "jee", subModeRef.current !== "general" ? subModeRef.current : undefined);
+      await appendSessionElements(uid, sessionId, elementsRef.current, 0);
+      savedElementCountRef.current = elementsRef.current.length;
+      setCurrentSessionId(sessionId);
+      preloadedSessionsRef.current = [newSession, ...preloadedSessionsRef.current];
+    } else {
+      if (newElements.length > 0) {
+        await appendSessionElements(uid, sessionId, newElements, savedElementCountRef.current);
+        savedElementCountRef.current = elementsRef.current.length;
+      }
+      if (sessionTitle) await updateSessionTitle(uid, sessionId, sessionTitle);
+      preloadedSessionsRef.current = preloadedSessionsRef.current.map(s =>
+        s.id === sessionId ? { ...s, ...(sessionTitle ? { title: sessionTitle } : {}), updatedAt: Date.now() } : s
+      );
+    }
+  }, [user?.uid]);
+
   // ── Replay current board ─────────────────────────────────────────────────
-  const handleReplay = useCallback(async () => {
+  const doReplay = useCallback(async () => {
     const snapshot = replaySnapshotRef.current.length > 0
       ? replaySnapshotRef.current          // re-replay from full snapshot
       : [...elementsRef.current];          // first replay — snapshot current board
@@ -920,6 +1102,15 @@ function TeachPage() {
     }
   }, [drainNext]);
 
+  const handleReplay = useCallback(() => {
+    // If background fill is still in progress, ask for confirmation first
+    if (ttsDropNotice === "filling") {
+      setReplayConfirmOpen(true);
+      return;
+    }
+    void doReplay();
+  }, [doReplay, ttsDropNotice]);
+
   const handleStopReplay = useCallback(() => {
     drainInterruptRef.current?.();
     drainAbortRef.current = true;
@@ -929,6 +1120,43 @@ function TeachPage() {
     setIsReplaying(false);
     setReplayMode(false);
   }, []);
+
+  const handleSpeakElement = useCallback(async (speakText: string, id: string) => {
+    // Abort any in-progress block replay
+    blockSpeakAbortRef.current = true;
+    if (speakingElementId === id) {
+      stopCurrentSpeech();
+      setSpeakingElementId(null);
+      return;
+    }
+    stopCurrentSpeech();
+    setSpeakingElementId(id);
+    const token = user ? await user.getIdToken() : null;
+    await speakElement(speakText, token, speedRef.current, languageRef.current);
+    setSpeakingElementId(prev => prev === id ? null : prev);
+  }, [speakingElementId, user]);
+
+  const handleStopBlock = useCallback(() => {
+    blockSpeakAbortRef.current = true;
+    stopCurrentSpeech();
+    setSpeakingElementId(null);
+  }, []);
+
+  const handleSpeakBlock = useCallback(async (items: Array<{ speak: string; id: string }>) => {
+    // Stop any existing speech or block replay
+    blockSpeakAbortRef.current = true;
+    stopCurrentSpeech();
+    setSpeakingElementId(null);
+    await new Promise<void>(r => setTimeout(r, 60));
+    blockSpeakAbortRef.current = false;
+    const token = user ? await user.getIdToken() : null;
+    for (const item of items) {
+      if (blockSpeakAbortRef.current) break;
+      setSpeakingElementId(item.id);
+      await speakElement(item.speak, token, speedRef.current, languageRef.current);
+    }
+    if (!blockSpeakAbortRef.current) setSpeakingElementId(null);
+  }, [user]);
 
   const handlePauseLive = useCallback(() => {
     drainInterruptRef.current?.();
@@ -945,10 +1173,10 @@ function TeachPage() {
       setAiState("speaking");
       await drainNext();
       setAiState("idle");
-      const uid = user?.uid;
-      const sessionId = currentSessionIdRef.current;
-      if (uid && sessionId) {
-        void updateTeachSessionElements(uid, sessionId, elementsRef.current);
+      if (currentSessionIdRef.current) {
+        void saveSession("").catch(() => toast.warning("Session couldn't be saved", {
+          action: { label: "Retry", onClick: () => { void saveSession("").catch(() => toast.error("Save failed again — check your connection")); } },
+        }));
       }
     })();
   }, [drainNext, user?.uid]);
@@ -981,9 +1209,13 @@ function TeachPage() {
       const dataUrl = captureScene(s.sceneId);
       if (!dataUrl) continue;
       try {
+        const verifyToken = user ? await user.getIdToken() : null;
         const res = await fetch(`${workerUrl}/api/verify-3d`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(verifyToken ? { "Authorization": `Bearer ${verifyToken}` } : {}),
+          },
           body: JSON.stringify({ imageDataUrl: dataUrl, title: s.title ?? "3D scene" }),
         });
         const { ok, feedback } = await res.json() as { ok: boolean; feedback: string };
@@ -1014,8 +1246,11 @@ function TeachPage() {
     pendingQueueRef.current = [];
     replaySnapshotRef.current = [];
     setElements([]);
+    elementsRef.current = [];
+    savedElementCountRef.current = 0;
     setVisibleFrom(0);
     setCurrentSessionId(null);
+    currentSessionIdRef.current = null;
     setIsReplaying(false);
     setIsPaused(false);
     setReplayMode(false);
@@ -1024,28 +1259,42 @@ function TeachPage() {
     setErrorText(null);
     setCheckpointElementId(null);
     setAttachments([]);
+    resetTTSMissedQueue();
+    setTtsDropNotice(null);
+    setReplayConfirmOpen(false);
+    blockSpeakAbortRef.current = true;
+    setSpeakingElementId(null);
     drainAbortRef.current = false;
   }, []);
 
   // ── Load session ──────────────────────────────────────────────────────────
   const handleLoadSession = useCallback((session: TeachSession) => {
-    stopCurrentSpeech();
-    pendingQueueRef.current = [];
-    stopAllTypewriters();
-    replaySnapshotRef.current = [];
-    const newElements = session.elements ?? [];
-    elementsRef.current = newElements;
-    setElements(newElements);
-    setVisibleFrom(Math.max(0, newElements.length - 35));
-    setCurrentSessionId(session.id);
-    setMode((session.mode as any) ?? "jee");
-    const restoredSubMode = (session.subMode as SubMode) ?? "general";
-    setSubMode(restoredSubMode);
-    subModeRef.current = restoredSubMode;
-    setErrorText(null);
-    setCheckpointElementId(null);
-    toast.success(`Loaded: "${session.title}"`);
-  }, []);
+    if (!user?.uid) return;
+    void (async () => {
+      stopCurrentSpeech();
+      pendingQueueRef.current = [];
+      stopAllTypewriters();
+      replaySnapshotRef.current = [];
+      setElements([]);
+      elementsRef.current = [];
+
+      setBoardInstant(true);
+      const loaded = await loadSessionElements(user.uid, session.id);
+      elementsRef.current = loaded;
+      setElements(loaded);
+      savedElementCountRef.current = session.elementCount ?? loaded.length;
+      setVisibleFrom(Math.max(0, loaded.length - 35));
+      setCurrentSessionId(session.id);
+      currentSessionIdRef.current = session.id;
+      setMode((session.mode as any) ?? "jee");
+      const restoredSubMode = (session.subMode as SubMode) ?? "general";
+      setSubMode(restoredSubMode);
+      subModeRef.current = restoredSubMode;
+      setErrorText(null);
+      setCheckpointElementId(null);
+      toast.success(`Loaded: "${session.title}"`);
+    })();
+  }, [user?.uid]);
 
   // ── Retry sending the last student message ──────────────────────────────
   const handleRetry = useCallback(() => {
@@ -1146,14 +1395,26 @@ function TeachPage() {
           imageBase64 = dataUrl.split(",")[1];
         }
 
-        // Upload to Firebase Storage
+        // Upload to R2 via worker
         const mimeType = isPdf ? "image/jpeg" : (file.type || "image/jpeg");
         const binary = atob(imageBase64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const fileRef = storageRef(storage, `attachments/${uid}/${attachmentId}`);
-        await uploadBytes(fileRef, bytes, { contentType: mimeType });
-        const storageUrl = await getDownloadURL(fileRef);
+        const workerBase = import.meta.env.VITE_WORKER_URL || "http://localhost:8787";
+        const idToken = await user!.getIdToken();
+        const uploadRes = await fetch(`${workerBase}/api/upload?id=${attachmentId}`, {
+          method: "POST",
+          headers: { "Content-Type": mimeType, "Authorization": `Bearer ${idToken}` },
+          body: bytes,
+        });
+        if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+        let uploadData: { key: string };
+        try {
+          uploadData = await uploadRes.json() as { key: string };
+        } catch {
+          throw new Error("Upload response was invalid — please try again");
+        }
+        const { key: storageUrl } = uploadData;
         setAttachments(prev => [...prev, { ...base, storageUrl, ...(text ? { text } : {}) }]);
       } catch (err) {
         console.error("Failed to upload file:", file.name, err);
@@ -1170,6 +1431,9 @@ function TeachPage() {
   // ── Guest demo handler ────────────────────────────────────────────────────
   const isGuest = user?.isAnonymous === true;
   const isPortraitMobile = useIsPortraitMobile();
+  const isMobileDevice = useIsMobileDevice();
+  const swipeTouchStartX = useRef(0);
+  const [showMobileControls, setShowMobileControls] = useState(false);
 
   const handleGuestDemo = useCallback(() => {
     // Stop any previous audio immediately
@@ -1217,25 +1481,14 @@ function TeachPage() {
 
   return (
     <>
-    {isPortraitMobile && (
-      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
-        <div className="relative">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" className="animate-bounce">
-            <rect x="16" y="8" width="32" height="48" rx="5" className="fill-muted stroke-border" strokeWidth="2"/>
-            <circle cx="32" cy="49" r="2.5" className="fill-muted-foreground/40"/>
-            <path d="M42 28 L52 32 L42 36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"/>
-            <path d="M12 28 L52 32" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-indigo-500"/>
-          </svg>
-        </div>
-        <div className="space-y-2">
-          <p className="text-xl font-bold tracking-tight">Rotate your phone</p>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            The AI teaching board is designed for landscape. Turn your phone sideways for the best experience.
-          </p>
-        </div>
-      </div>
-    )}
-    <div className="relative -mx-2 pb-28">
+    <div
+      className="relative -mx-2 pb-28"
+      onTouchStart={isPortraitMobile ? (e) => { swipeTouchStartX.current = e.touches[0].clientX; } : undefined}
+      onTouchEnd={isPortraitMobile ? (e) => {
+        const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
+        if (dx > 80 && !isGuest) setHistoryOpen(true);
+      } : undefined}
+    >
       {/* ── Files removed notice banner ── */}
       <AnimatePresence>
         {filesRemovedNotice && (
@@ -1312,7 +1565,9 @@ function TeachPage() {
         isFullscreen={isFullscreen}
         toggleFullscreen={toggleFullscreen}
         ttsEnabled={ttsEnabled}
-        modeBadge={mode ? `${getModeConfig(mode).name}${subMode === "3d" ? " · 3D Beta" : ` · ${getModeConfig(mode).persona}`}` : undefined}
+        speed={speed}
+        onSpeedChange={handleSpeedChange}
+        modeBadge={mode ? `${getModeConfig(mode).name}${subMode === "3d" ? " · 3D Beta" : subMode === "2d" ? " · 2D Beta" : ` · ${getModeConfig(mode).persona}`}` : undefined}
         isGuest={isGuest}
         onOpenHistory={isGuest
           ? (aiState === "idle" && elements.length > 0 ? handleGuestDemo : undefined)
@@ -1337,6 +1592,22 @@ function TeachPage() {
             return nextVal;
           });
         }}
+        elementSpeakEnabled={elementSpeakEnabled}
+        elementSpeakAvailable={elements.length > 0}
+        onToggleElementSpeak={isGuest ? undefined : () => {
+          if (elements.length === 0) {
+            toast.info("Start a session first to use speak buttons");
+            return;
+          }
+          setElementSpeakEnabled(v => !v);
+        }}
+        onShowMobileControls={isMobileDevice && !isGuest ? () => setShowMobileControls(v => !v) : undefined}
+        isCanvasActive={isCanvasActive}
+        canvasRef={canvasRef}
+        canvasTool={canvasTool}
+        canvasColor={canvasColor}
+        brushSize={brushSize}
+        canvasSessionId={currentSessionId}
       >
         {deviceBlocked ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
@@ -1368,7 +1639,7 @@ function TeachPage() {
             />
           )
         ) : elements.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="flex flex-col items-center justify-center flex-1 gap-4">
             {!isGuest && (
               changeModeOpen ? (
                 <ModeSelector
@@ -1403,9 +1674,64 @@ function TeachPage() {
                 onCheckpointAnswer={handleCheckpointAnswer}
                 optionAnswers={optionAnswers}
                 onOptionSelect={handleOptionSelect}
+                onFixElement={(id, newValue) => {
+                  const fixEl = (el: BoardElement) => {
+                    if (el.id !== id) return el;
+                    if (el.type === "ai_body" || el.type === "ai_tip") return { ...el, content: newValue };
+                    if (el.type === "ai_math" || el.type === "ai_highlight" || el.type === "ai_step") return { ...el, latex: newValue };
+                    return el;
+                  };
+                  setElements(prev => prev.map(fixEl));
+                  elementsRef.current = elementsRef.current.map(fixEl);
+                  const sess = currentSessionId;
+                  if (sess && user?.uid) {
+                    const edited = elementsRef.current.find(e => e.id === id);
+                    if (edited) void updateSessionElement(user.uid, sess, edited);
+                  }
+                }}
                 instant={boardInstant}
+                showSpeakButtons={elementSpeakEnabled}
+                speakingElementId={speakingElementId}
+                onSpeakElement={isGuest ? undefined : handleSpeakElement}
+                onSpeakBlock={isGuest ? undefined : handleSpeakBlock}
+                onStopBlock={isGuest ? undefined : handleStopBlock}
               />
             </ErrorBoundary>
+
+            {/* ── TTS missed-chunk notification ── */}
+            <AnimatePresence>
+              {aiState === "idle" && ttsDropNotice && (
+                <motion.div
+                  key="tts-drop-notice"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.25 }}
+                  className={`mt-3 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-medium ${
+                    boardConfig.mode === "blackboard"
+                      ? "bg-amber-950/30 border border-amber-500/20 text-amber-300"
+                      : "bg-amber-50 border border-amber-200 text-amber-700"
+                  }`}
+                >
+                  <span className="shrink-0 text-sm">{ttsDropNotice === "filling" ? "⏳" : "✓"}</span>
+                  <span className="flex-1">
+                    {ttsDropNotice === "filling"
+                      ? "Some audio was skipped — preparing for replay in the background…"
+                      : "Audio ready — tap Replay to hear the full session."}
+                  </span>
+                  {ttsDropNotice === "ready" && (
+                    <button
+                      onClick={() => void doReplay()}
+                      className={`shrink-0 underline underline-offset-2 font-semibold ${
+                        boardConfig.mode === "blackboard" ? "text-amber-200 hover:text-amber-100" : "text-amber-800 hover:text-amber-900"
+                      }`}
+                    >
+                      Replay
+                    </button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </TeachBoard>
@@ -1465,10 +1791,61 @@ function TeachPage() {
         />
       )}
 
+      {/* ── Mobile controls overlay — shown on triple-tap, dismissed on outside tap ── */}
+      <AnimatePresence>
+        {isMobileDevice && !isGuest && showMobileControls && (
+          <>
+            <div className="fixed inset-0 z-[69]" onClick={() => setShowMobileControls(false)} />
+            <motion.div
+              className="fixed top-16 left-1/2 z-[70] -translate-x-1/2 flex items-center gap-2 rounded-2xl px-3 py-2"
+              style={{ background: "rgba(10,10,10,0.92)", backdropFilter: "blur(20px)", boxShadow: "0 0 0 1px rgba(255,255,255,0.09), 0 8px 30px rgba(0,0,0,0.6)" }}
+              initial={{ opacity: 0, y: -8, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+            >
+              <button onClick={() => { handleToggleBoardMode(); setShowMobileControls(false); }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 transition-colors">
+                {boardConfig.mode === "blackboard" ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-indigo-400" />}
+              </button>
+              <button onClick={() => { setTtsEnabled(v => { if (v) stopCurrentSpeech(); return !v; }); setShowMobileControls(false); }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 transition-colors">
+                {ttsEnabled ? <Volume2 size={15} className="text-emerald-400" /> : <VolumeX size={15} className="text-white/35" />}
+              </button>
+              <button onClick={() => { const steps = [0.75, 1, 1.25, 1.5, 2]; const idx = steps.indexOf(speed); handleSpeedChange(steps[(idx + 1) % steps.length]); }}
+                className="flex h-8 items-center gap-1 rounded-xl px-2 text-white/50 hover:bg-white/10 transition-colors">
+                <Gauge size={14} />
+                <span className="text-[11px] font-semibold">{speed === 1 ? "1×" : `${speed}×`}</span>
+              </button>
+              <button onClick={() => { handleNewSession(); setShowMobileControls(false); }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-white/50 hover:bg-white/10 transition-colors">
+                <Plus size={15} />
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Canvas Toolbar — desktop only, shown when canvas is active ── */}
+      <AnimatePresence>
+        {isCanvasActive && !isMobileDevice && (
+          <CanvasToolbar
+            tool={canvasTool}
+            color={canvasColor}
+            brushSize={brushSize}
+            onToolChange={setCanvasTool}
+            onColorChange={setCanvasColor}
+            onBrushSizeChange={setBrushSize}
+            onUndo={() => canvasRef.current?.undo()}
+            onRedo={() => canvasRef.current?.redo()}
+            onClear={() => setShowClearConfirm(true)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Bottom Dock ── */}
       {isGuest ? (
         (aiState === "thinking" || aiState === "speaking") ? (
-          // Demo playing — show stop button
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
             <button
               onClick={() => {
@@ -1496,16 +1873,19 @@ function TeachPage() {
           disabled={dockDisabled}
           placeholder={dockPlaceholder}
           isAttachmentUploading={isAttachmentUploading}
+          isLoggedIn={!!user && !user.isAnonymous}
           subMode={subMode}
+          language={language}
+          onLanguageChange={handleLanguageChange}
+          boardLanguage={boardLanguage}
+          onBoardLanguageChange={handleBoardLanguageChange}
           showSubMode={mode === "jee" || mode === "neet"}
           onSubModeChange={(m) => {
             if (m === subMode) return;
-            if (elements.length > 0) {
-              setPendingSubMode(m); // show confirmation dialog
-            } else {
-              setSubMode(m);
-            }
+            if (elements.length > 0) { setPendingSubMode(m); } else { setSubMode(m); }
           }}
+          isCanvasActive={isCanvasActive}
+          onToggleCanvas={currentSessionId ? () => setIsCanvasActive(v => !v) : undefined}
         />
       )}
 
@@ -1532,13 +1912,63 @@ function TeachPage() {
         />
       </Suspense>
 
+      <Suspense>
+        <FreeTierIntroDialog
+          open={introOpen}
+          onClose={handleCloseIntro}
+          onUpgrade={() => setFeedbackOpen(true)}
+        />
+      </Suspense>
+
+      {/* Replay confirmation — shown when background audio fill is still in progress */}
+      <AlertDialog open={replayConfirmOpen} onOpenChange={(o) => { if (!o) setReplayConfirmOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Audio still loading</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some audio chunks are still being fetched in the background. Replay may have silent gaps for those sections. You can wait a moment and try again, or replay anyway.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReplayConfirmOpen(false)}>Wait</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setReplayConfirmOpen(false); void doReplay(); }}>
+              Replay anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear canvas confirmation dialog */}
+      <AlertDialog open={showClearConfirm} onOpenChange={(o) => { if (!o) setShowClearConfirm(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear canvas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              All your drawings and annotations on this board will be permanently erased. This cannot be undone after clearing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowClearConfirm(false)}>Keep drawings</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                canvasRef.current?.clear();
+                setShowClearConfirm(false);
+              }}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              Clear all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Sub-mode switch confirmation dialog */}
       <AlertDialog open={!!pendingSubMode} onOpenChange={(o) => { if (!o) setPendingSubMode(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Switch to {pendingSubMode === "3d" ? "3D Visualization" : "General"} mode?</AlertDialogTitle>
+            <AlertDialogTitle>Switch to {pendingSubMode === "3d" ? "3D Visualization" : pendingSubMode === "2d" ? "2D Diagrams" : "General"} mode?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your current session will be saved to history. A new session will open in {pendingSubMode === "3d" ? "3D Visualization" : "General"} mode.
+              Your current session will be saved to history. A new session will open in {pendingSubMode === "3d" ? "3D Visualization" : pendingSubMode === "2d" ? "2D Diagrams" : "General"} mode.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

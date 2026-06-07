@@ -53,7 +53,7 @@ function FocusPage() {
   }, [subject, tracks]);
   const [showPanel, setShowPanel] = useState(!!selectedTrack);
   const [panelClosing, setPanelClosing] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ function FocusPage() {
   const handleChapterSelect = (chapterId: string) => {
     setSelectedChapterId(chapterId);
     setPanelClosing(true);
-    navigate({ to: "/focus", search: { subject: undefined }, replace: true });
+    navigate({ to: "/focus", search: { subject: "" }, replace: true });
     timerRef.current = setTimeout(() => {
       setShowPanel(false);
       setPanelClosing(false);

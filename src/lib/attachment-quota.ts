@@ -1,8 +1,8 @@
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "firebase/firestore";
 import { db } from "./firebase";
 
-export const FREE_PDF_LIMIT = 5;
-export const FREE_IMAGE_LIMIT = 10;
+export const FREE_PDF_LIMIT = 1;
+export const FREE_IMAGE_LIMIT = 2;
 
 const usageRef = (uid: string) => doc(db, "users", uid, "usage", "teach");
 
