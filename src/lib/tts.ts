@@ -133,35 +133,10 @@ let audioCtx: AudioContext | null = null;
 let currentSourceNode: AudioBufferSourceNode | null = null;
 let activeSpeechId = 0;
 let replayMode = false;
-let browserTTSMode = false;
-let currentUtterance: SpeechSynthesisUtterance | null = null;
 
 const memCache = new Map<string, AudioBuffer>();
 
 export function setReplayMode(on: boolean) { replayMode = on; }
-export function setBrowserTTSMode(on: boolean) { browserTTSMode = on; }
-export function isBrowserTTSMode() { return browserTTSMode; }
-
-// ── Browser TTS (Web Speech API) ──────────────────────────────────────────────
-
-function getLang(language?: "english" | "hinglish" | "hindi"): string {
-  if (language === "hindi") return "hi-IN";
-  if (language === "hinglish") return "hi-IN";
-  return "en-IN";
-}
-
-function speakWithBrowser(text: string, speed = 1, language?: "english" | "hinglish" | "hindi"): Promise<void> {
-  return new Promise((resolve) => {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = getLang(language);
-    utterance.rate = Math.max(0.5, Math.min(2, speed));
-    currentUtterance = utterance;
-    utterance.onend = () => { currentUtterance = null; resolve(); };
-    utterance.onerror = () => { currentUtterance = null; resolve(); };
-    window.speechSynthesis.speak(utterance);
-  });
-}
 
 // ── Missed-chunk tracking (per-response background fill) ──────────────────────
 
@@ -355,10 +330,6 @@ export async function speakElement(text: string, idToken?: string | null, speed 
   const trimmed = normalizeSpeakText(text.trim());
   if (!trimmed) return;
 
-  if (browserTTSMode) {
-    return speakWithBrowser(trimmed, speed, language);
-  }
-
   const workerUrl = import.meta.env.VITE_WORKER_URL;
   const voiceId = (language === "hinglish" || language === "hindi") ? getSavedHinglishVoiceId() : getSavedVoiceId();
 
@@ -430,11 +401,6 @@ export async function speakElement(text: string, idToken?: string | null, speed 
 }
 
 export function stopCurrentSpeech() {
-  if (browserTTSMode) {
-    window.speechSynthesis.cancel();
-    currentUtterance = null;
-    return;
-  }
   if (currentSourceNode) {
     try { currentSourceNode.stop(); currentSourceNode.disconnect(); }
     catch { /* already stopped */ }
