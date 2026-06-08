@@ -17,6 +17,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGate } from "@/components/AuthGate";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { NotesChromeProvider } from "@/contexts/NotesChromeContext";
+import { AirgapProvider } from "@/hooks/useAirgap";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -187,6 +188,7 @@ function RootComponent() {
       <AuthProvider>
         <AuthGate>
           <ProfileProvider>
+            <AirgapProvider>
             <OnboardingGate>
               <NotesChromeProvider>
                 {isPrivacyRoute ? (
@@ -211,6 +213,7 @@ function RootComponent() {
                 )}
               </NotesChromeProvider>
             </OnboardingGate>
+            </AirgapProvider>
           </ProfileProvider>
         </AuthGate>
       </AuthProvider>

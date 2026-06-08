@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, AudioLines, LayoutGrid, ChevronDown, Check, Loader2, Play, Square, PencilLine } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
-import { PRESET_VOICES, HINGLISH_VOICES_EL, HINGLISH_VOICES_SAI, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId } from "@/lib/tts";
+import { PRESET_VOICES, HINGLISH_VOICES_EL, HINGLISH_VOICES_SAI, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId, setBrowserTTSMode, isBrowserTTSMode } from "@/lib/tts";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 export function BottomDock({
@@ -37,6 +37,7 @@ export function BottomDock({
   const [subModeOpen, setSubModeOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(getSavedVoiceId);
   const [selectedHinglishVoice, setSelectedHinglishVoice] = useState(getSavedHinglishVoiceId);
+  const [browserTTS, setBrowserTTS] = useState(isBrowserTTSMode);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
@@ -68,6 +69,8 @@ export function BottomDock({
 
   const selectVoice = (id: string) => {
     stopPreview();
+    setBrowserTTSMode(false);
+    setBrowserTTS(false);
     if (language === "hinglish" || language === "hindi") {
       saveHinglishVoiceId(id);
       setSelectedHinglishVoice(id);
@@ -352,9 +355,9 @@ export function BottomDock({
           >
             <AudioLines className="h-3.5 w-3.5" />
             <span className="text-[11px] font-semibold">
-              {currentVoice?.name ?? "Voice"}
-              {language === "hinglish" && <span className="ml-1 text-orange-400">· HI</span>}
-              {language === "hindi" && <span className="ml-1 text-orange-400">· हि</span>}
+              {browserTTS ? "Browser" : (currentVoice?.name ?? "Voice")}
+              {!browserTTS && language === "hinglish" && <span className="ml-1 text-orange-400">· HI</span>}
+              {!browserTTS && language === "hindi" && <span className="ml-1 text-orange-400">· हि</span>}
             </span>
             <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
           </motion.button>
@@ -379,9 +382,39 @@ export function BottomDock({
               </button>
               {hovered === "voice" && (
                 <div className="border-t border-white/5">
+                  {/* Browser TTS option */}
+                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25">Free</p>
+                  <div className="flex items-center transition-colors hover:bg-white/8">
+                    <button
+                      onClick={() => { setBrowserTTSMode(!browserTTS); setBrowserTTS(v => !v); }}
+                      className="flex flex-1 items-center justify-between pl-4 pr-1 py-2 text-left"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-white/80">Browser TTS</p>
+                        <p className="text-[11px] text-white/35">Device voice · free</p>
+                      </div>
+                      {browserTTS && <Check size={13} className="shrink-0 text-emerald-400 ml-1" />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.speechSynthesis.cancel();
+                        const u = new SpeechSynthesisUtterance("Newton's second law states that force equals mass times acceleration.");
+                        u.lang = "en-IN";
+                        window.speechSynthesis.speak(u);
+                      }}
+                      className="shrink-0 px-2.5 py-2 text-white/25 hover:text-white/70 transition-colors"
+                      title="Test browser voice"
+                    >
+                      <Play size={10} className="fill-current" />
+                    </button>
+                  </div>
+                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 border-t border-white/5">ElevenLabs</p>
                   {activeVoiceGroups.map((group, gi) => (
                     <div key={group.label}>
-                      <p className={`px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 ${gi > 0 ? "border-t border-white/5" : ""}`}>{group.label}</p>
+                      {(gi > 0 || activeVoiceGroups.length > 1) && (
+                        <p className={`px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 ${gi > 0 ? "border-t border-white/5" : ""}`}>{group.label}</p>
+                      )}
                       {group.voices.map(v => {
                         const isPreviewing = previewingVoiceId === v.id;
                         return (

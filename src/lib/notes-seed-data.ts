@@ -153,14 +153,14 @@ export const SEED_BLOCKS: Record<
   string,
   { shortNotes?: ContentBlock[]; formulaSheet?: ContentBlock[] }
 > = {
-  "physics/phy-5": { shortNotes: thermoNotes, formulaSheet: thermoFormulas },
-  "physics/phy-1": { formulaSheet: kinematicsFormulas },
-  "pchem/pc-7": { shortNotes: kineticsNotes, formulaSheet: kineticsFormulas },
-  "pchem/pc-3": { shortNotes: thermoNotes, formulaSheet: thermoFormulas },
-  "ochem/oc-1": { shortNotes: gocNotes },
-  "ichem/ic-2": { shortNotes: periodicNotes },
-  "ichem/ic-3": { formulaSheet: coordinationFormulas },
-  "maths/m-6": { shortNotes: calculusNotes, formulaSheet: calculusFormulas },
+  "physics/physics-ktg-and-thermodynamics": { shortNotes: thermoNotes, formulaSheet: thermoFormulas },
+  "physics/physics-kinematics": { formulaSheet: kinematicsFormulas },
+  "pchem/pchem-chemical-kinetics": { shortNotes: kineticsNotes, formulaSheet: kineticsFormulas },
+  "pchem/pchem-thermodynamics": { shortNotes: thermoNotes, formulaSheet: thermoFormulas },
+  "ochem/ochem-goc": { shortNotes: gocNotes },
+  "ichem/ichem-periodic-table-periodic-properties": { shortNotes: periodicNotes },
+  "ichem/ichem-coordination-compounds": { formulaSheet: coordinationFormulas },
+  "maths/maths-basic-calculus-and-graphs": { shortNotes: calculusNotes, formulaSheet: calculusFormulas },
 };
 
 function chapterKey(subjectId: string, chapterId: string) {
@@ -169,22 +169,22 @@ function chapterKey(subjectId: string, chapterId: string) {
 
 export const SEED_NOTES_MANIFEST: NotesManifest = {
   physics: {
-    "phy-1": { hasNotes: false, hasFormulas: true },
-    "phy-5": { hasNotes: true, hasFormulas: true },
+    "physics-kinematics": { hasNotes: false, hasFormulas: true },
+    "physics-ktg-and-thermodynamics": { hasNotes: true, hasFormulas: true },
   },
   pchem: {
-    "pc-3": { hasNotes: true, hasFormulas: true },
-    "pc-7": { hasNotes: true, hasFormulas: true },
+    "pchem-thermodynamics": { hasNotes: true, hasFormulas: true },
+    "pchem-chemical-kinetics": { hasNotes: true, hasFormulas: true },
   },
   ochem: {
-    "oc-1": { hasNotes: true, hasFormulas: false },
+    "ochem-goc": { hasNotes: true, hasFormulas: false },
   },
   ichem: {
-    "ic-2": { hasNotes: true, hasFormulas: false },
-    "ic-3": { hasNotes: false, hasFormulas: true },
+    "ichem-periodic-table-periodic-properties": { hasNotes: true, hasFormulas: false },
+    "ichem-coordination-compounds": { hasNotes: false, hasFormulas: true },
   },
   maths: {
-    "m-6": { hasNotes: true, hasFormulas: true },
+    "maths-basic-calculus-and-graphs": { hasNotes: true, hasFormulas: true },
   },
 };
 

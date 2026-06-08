@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { PRESET_VOICES, getSavedVoiceId, saveVoiceId } from "@/lib/tts";
-import { Mic2, ChevronDown, Check } from "lucide-react";
+import { PRESET_VOICES, getSavedVoiceId, saveVoiceId, isBrowserTTSMode, setBrowserTTSMode } from "@/lib/tts";
+import { Mic2, ChevronDown, Check, Play } from "lucide-react";
+
+const BROWSER_TTS_ID = "__browser__";
+const SAMPLE_TEXT = "Newton's second law states that force equals mass times acceleration. This is the foundation of classical mechanics.";
 
 interface VoicePickerProps {
   isBlackboard: boolean;
@@ -9,7 +12,7 @@ interface VoicePickerProps {
 
 export function VoicePicker({ isBlackboard, onVoiceChange }: VoicePickerProps) {
   const [open, setOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState(getSavedVoiceId);
+  const [selectedId, setSelectedId] = useState(() => isBrowserTTSMode() ? BROWSER_TTS_ID : getSavedVoiceId());
   const [customId, setCustomId] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -21,11 +24,27 @@ export function VoicePicker({ isBlackboard, onVoiceChange }: VoicePickerProps) {
   }, []);
 
   const select = (id: string) => {
+    if (id === BROWSER_TTS_ID) {
+      setBrowserTTSMode(true);
+      setSelectedId(BROWSER_TTS_ID);
+      setOpen(false);
+      onVoiceChange();
+      return;
+    }
+    setBrowserTTSMode(false);
     saveVoiceId(id);
     setSelectedId(id);
     setOpen(false);
     setShowCustom(false);
     onVoiceChange();
+  };
+
+  const testBrowserTTS = () => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(SAMPLE_TEXT);
+    utterance.lang = "en-IN";
+    utterance.rate = 1;
+    window.speechSynthesis.speak(utterance);
   };
 
   const applyCustom = () => {
@@ -41,12 +60,13 @@ export function VoicePicker({ isBlackboard, onVoiceChange }: VoicePickerProps) {
   }`;
 
   const current = PRESET_VOICES.find(v => v.id === selectedId);
+  const isBrowser = selectedId === BROWSER_TTS_ID;
 
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)} className={btnClass} title="Change voice">
         <Mic2 size={13} />
-        <span>{current?.name ?? "Voice"}</span>
+        <span>{isBrowser ? "Browser" : (current?.name ?? "Voice")}</span>
         <ChevronDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -54,6 +74,32 @@ export function VoicePicker({ isBlackboard, onVoiceChange }: VoicePickerProps) {
         <div className={`absolute right-0 top-full mt-1.5 z-50 w-52 rounded-xl border shadow-lg overflow-hidden ${
           isBlackboard ? "bg-neutral-900 border-white/10" : "bg-white border-neutral-200"
         }`}>
+          {/* Browser TTS option */}
+          <button
+            onClick={() => select(BROWSER_TTS_ID)}
+            className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors ${
+              isBlackboard ? "hover:bg-white/8 text-neutral-200" : "hover:bg-neutral-50 text-neutral-800"
+            }`}
+          >
+            <div>
+              <p className="font-semibold">Browser TTS</p>
+              <p className={`text-xs ${isBlackboard ? "text-neutral-400" : "text-neutral-500"}`}>Free · Device voice</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={e => { e.stopPropagation(); testBrowserTTS(); }}
+                className={`rounded-md p-1 transition-colors ${isBlackboard ? "hover:bg-white/10 text-neutral-400" : "hover:bg-neutral-100 text-neutral-500"}`}
+                title="Test browser voice"
+              >
+                <Play size={11} />
+              </button>
+              {isBrowser && <Check size={14} className="shrink-0 text-emerald-500" />}
+            </div>
+          </button>
+
+          {/* Divider */}
+          <div className={`border-t ${isBlackboard ? "border-white/10" : "border-neutral-100"}`} />
+
           {/* Preset voices */}
           {PRESET_VOICES.map(v => (
             <button

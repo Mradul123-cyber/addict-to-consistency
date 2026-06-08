@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
@@ -157,7 +157,21 @@ export function normalizeKeyword(input: string) {
   return normalized;
 }
 
-export function useAirgap() {
+type AirgapValue = ReturnType<typeof useAirgapInternal>;
+const AirgapContext = createContext<AirgapValue | null>(null);
+
+export function AirgapProvider({ children }: { children: ReactNode }) {
+  const value = useAirgapInternal();
+  return <AirgapContext.Provider value={value}>{children}</AirgapContext.Provider>;
+}
+
+export function useAirgap(): AirgapValue {
+  const ctx = useContext(AirgapContext);
+  if (!ctx) throw new Error("useAirgap must be used within AirgapProvider");
+  return ctx;
+}
+
+function useAirgapInternal() {
   const { user } = useAuth();
   const [isOn, setIsOn] = useState(false);
   const [isExtensionReady, setIsExtensionReady] = useState(false);
@@ -468,6 +482,7 @@ export function useAirgap() {
     }
 
     const userDocRef = doc(db, "users", user.uid);
+    let airgapNormalized = false; // allow at most one normalization write per subscription lifecycle
 
     const unsubscribe = onSnapshot(
       userDocRef,
@@ -499,14 +514,9 @@ export function useAirgap() {
           Array.isArray(data?.airgapHealthySites) &&
           !arraysEqual(nextHealthySites, data.airgapHealthySites);
 
-        if (
-          shouldSeedBlocklist ||
-          shouldSeedKeywords ||
-          shouldSeedHealthySites ||
-          shouldNormalizeBlocklist ||
-          shouldNormalizeKeywords ||
-          shouldNormalizeHealthySites
-        ) {
+        const _needsWrite = shouldSeedBlocklist || shouldSeedKeywords || shouldSeedHealthySites || shouldNormalizeBlocklist || shouldNormalizeKeywords || shouldNormalizeHealthySites;
+        if (_needsWrite && !airgapNormalized && !snapshot.metadata.hasPendingWrites) {
+          airgapNormalized = true;
           await setDoc(
             userDocRef,
             {

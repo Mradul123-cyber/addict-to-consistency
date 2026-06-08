@@ -154,6 +154,7 @@ export default function MatrixApp() {
   const switcherContentRef = useRef<HTMLDivElement>(null);
   const bookmarkHighlightTimerRef = useRef<number | null>(null);
   const loadingChaptersRef = useRef<Set<string>>(new Set());
+  const bookmarksFromSnapshotRef = useRef(false);
 
   const subjects: Subject[] = useMemo(
     () =>
@@ -410,6 +411,7 @@ export default function MatrixApp() {
         if (snapshot.exists()) {
           const items = snapshot.data().items;
           const next = Array.isArray(items) ? (items as SavedBookmark[]) : [];
+          bookmarksFromSnapshotRef.current = true;
           setBookmarks(next);
           localStorage.setItem(cacheKey, JSON.stringify(next));
         } else if (cachedBookmarks.length > 0) {
@@ -427,6 +429,12 @@ export default function MatrixApp() {
   useEffect(() => {
     const uid = user?.uid;
     if (!uid || !bookmarksHydrated) return;
+
+    // Bookmarks came from Firestore — no need to write back, would cause infinite loop
+    if (bookmarksFromSnapshotRef.current) {
+      bookmarksFromSnapshotRef.current = false;
+      return;
+    }
 
     const cacheKey = bookmarkCacheKey(uid);
     localStorage.setItem(cacheKey, JSON.stringify(bookmarks));

@@ -1,46 +1,46 @@
 {
   "physics": {
-    "phy-1": {
+    "physics-kinematics": {
       "hasNotes": false,
       "hasFormulas": true
     },
-    "phy-2": {
+    "physics-ktg-and-thermodynamics": {
       "hasNotes": true,
       "hasFormulas": true
     },
-    "phy-5": {
+    "physics-laws-of-motion": {
       "hasNotes": true,
       "hasFormulas": true
     }
   },
   "pchem": {
-    "pc-3": {
+    "pchem-thermodynamics": {
       "hasNotes": true,
       "hasFormulas": true
     },
-    "pc-7": {
+    "pchem-chemical-kinetics": {
       "hasNotes": true,
       "hasFormulas": true
     }
   },
   "ochem": {
-    "oc-1": {
+    "ochem-goc": {
       "hasNotes": true,
       "hasFormulas": false
     }
   },
   "ichem": {
-    "ic-2": {
+    "ichem-periodic-table-periodic-properties": {
       "hasNotes": true,
       "hasFormulas": false
     },
-    "ic-3": {
+    "ichem-coordination-compounds": {
       "hasNotes": false,
       "hasFormulas": true
     }
   },
   "maths": {
-    "m-6": {
+    "maths-basic-calculus-and-graphs": {
       "hasNotes": true,
       "hasFormulas": true
     }

@@ -136,6 +136,7 @@ let currentSubscriptionUid: string | null = null;
 let unsubscribeSessions: (() => void) | null = null;
 let unsubscribeTracks: (() => void) | null = null;
 let unsubscribeCalendarTasks: (() => void) | null = null;
+let seedWriteInFlight = false;
 
 const CACHE_PREFIX = "store_cache_";
 
@@ -293,47 +294,20 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
   const tracksDocRef = doc(db, "users", uid, "tracks", "data");
   unsubscribeTracks = onSnapshot(
     tracksDocRef,
-    async (snapshot) => {
+    (snapshot) => {
       if (!snapshot.exists() || snapshot.data()?.seedVersion !== SEED_VERSION) {
-        // Fresh seed or version bump — re-seed tracks entirely (preserves customTasks)
-        // Fire-and-forget — do not await inside snapshot callback to avoid blocking the write stream
-        const existingCustomTasks = snapshot.exists() ? (snapshot.data()?.customTasks || []) : [];
+        // No-op if a local write is already pending — prevents double-seed on optimistic snapshots
+        if (snapshot.metadata.hasPendingWrites) return;
+        if (seedWriteInFlight) return;
+        // New user or version bump — re-seed entirely, preserving any custom tasks
+        const existingCustomTasks = snapshot.exists() ? (snapshot.data()?.customTasks ?? []) : [];
+        seedWriteInFlight = true;
         void setDoc(tracksDocRef, { tracks: SEED_TRACKS, seedVersion: SEED_VERSION, customTasks: existingCustomTasks })
-          .catch((err) => console.error("Error seeding tracks:", err));
+          .then(() => { seedWriteInFlight = false; })
+          .catch((err) => { seedWriteInFlight = false; console.error("[TRACKS] seed write failed:", err); });
       } else {
-        const loadedTracks: Track[] = snapshot.data().tracks || [];
-        customTasks = snapshot.data().customTasks || [];
-
-        // Migration: backfill seed concepts into chapters that have none
-        let needsMigration = false;
-        const migratedTracks = loadedTracks.map((t) => {
-          const seedTrack = SEED_TRACKS.find((st) => st.id === t.id);
-          if (!seedTrack) return t;
-
-          // Backfill missing concepts
-          const migratedChapters = t.chapters.map((c) => {
-            if (!c.concepts || c.concepts.length === 0) {
-              const seedChapter = seedTrack.chapters.find((sc) => sc.id === c.id);
-              if (seedChapter?.concepts && seedChapter.concepts.length > 0) {
-                needsMigration = true;
-                return { ...c, concepts: seedChapter.concepts };
-              }
-            }
-            return c;
-          });
-
-          return { ...t, chapters: migratedChapters };
-        });
-
-        if (needsMigration) {
-          // Fire-and-forget — do not await inside the snapshot callback to avoid blocking the write stream
-          void setDoc(tracksDocRef, { tracks: migratedTracks }, { merge: true }).catch(
-            (err) => console.error("Error migrating concepts:", err)
-          );
-        }
-
-        tracks = migratedTracks;
-        customTasks = snapshot.data().customTasks || [];
+        tracks = snapshot.data().tracks ?? [];
+        customTasks = snapshot.data().customTasks ?? [];
         refreshSnap();
         onStoreChange();
         saveCache(uid);
