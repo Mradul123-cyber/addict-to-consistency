@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { FileText, ImageIcon, Mic, Paperclip, SendHorizonal, X, AudioLines, LayoutGrid, ChevronDown, Check, Loader2, Play, Square, PencilLine } from "lucide-react";
 import type { BottomDockProps } from "@/types/teach";
-import { PRESET_VOICES, HINGLISH_VOICES, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId } from "@/lib/tts";
+import { PRESET_VOICES, HINGLISH_VOICES_EL, HINGLISH_VOICES_SAI, getSavedVoiceId, saveVoiceId, getSavedHinglishVoiceId, saveHinglishVoiceId } from "@/lib/tts";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 export function BottomDock({
@@ -40,8 +40,14 @@ export function BottomDock({
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
-  const activeVoices = (language === "hinglish" || language === "hindi") ? HINGLISH_VOICES : PRESET_VOICES;
-  const activeSelectedId = (language === "hinglish" || language === "hindi") ? selectedHinglishVoice : selectedVoice;
+  const isIndic = language === "hinglish" || language === "hindi";
+  const activeVoiceGroups = isIndic
+    ? [{ label: "ElevenLabs", voices: HINGLISH_VOICES_EL }, { label: "Smallest AI", voices: HINGLISH_VOICES_SAI }]
+    : [{ label: "ElevenLabs", voices: PRESET_VOICES }];
+  const activeSelectedId = isIndic ? selectedHinglishVoice : selectedVoice;
+  const currentVoiceAll = isIndic
+    ? [...HINGLISH_VOICES_EL, ...HINGLISH_VOICES_SAI].find(v => v.id === activeSelectedId)
+    : PRESET_VOICES.find(v => v.id === activeSelectedId);
 
   const stopPreview = () => {
     if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current = null; }
@@ -73,7 +79,7 @@ export function BottomDock({
     setHovered(null);
   };
 
-  const currentVoice = activeVoices.find(v => v.id === activeSelectedId);
+  const currentVoice = currentVoiceAll;
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
@@ -373,27 +379,32 @@ export function BottomDock({
               </button>
               {hovered === "voice" && (
                 <div className="border-t border-white/5">
-                  {activeVoices.map(v => {
-                    const isPreviewing = previewingVoiceId === v.id;
-                    return (
-                      <div key={v.id} className="flex items-center transition-colors hover:bg-white/8">
-                        <button onClick={() => selectVoice(v.id)} className="flex flex-1 items-center justify-between pl-4 pr-1 py-2 text-left">
-                          <div>
-                            <p className="text-sm font-semibold text-white/80">{v.name}</p>
-                            <p className="text-[11px] text-white/35">{v.desc}</p>
+                  {activeVoiceGroups.map((group, gi) => (
+                    <div key={group.label}>
+                      <p className={`px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/25 ${gi > 0 ? "border-t border-white/5" : ""}`}>{group.label}</p>
+                      {group.voices.map(v => {
+                        const isPreviewing = previewingVoiceId === v.id;
+                        return (
+                          <div key={v.id} className="flex items-center transition-colors hover:bg-white/8">
+                            <button onClick={() => selectVoice(v.id)} className="flex flex-1 items-center justify-between pl-4 pr-1 py-2 text-left">
+                              <div>
+                                <p className="text-sm font-semibold text-white/80">{v.name}</p>
+                                <p className="text-[11px] text-white/35">{v.desc}</p>
+                              </div>
+                              {activeSelectedId === v.id && <Check size={13} className="shrink-0 text-emerald-400 ml-1" />}
+                            </button>
+                            {isLoggedIn && (
+                              <button onClick={(e) => { e.stopPropagation(); handlePreview(v.id, v.preview); }}
+                                className="shrink-0 px-2.5 py-2 text-white/25 hover:text-white/70 transition-colors"
+                              >
+                                {isPreviewing ? <Square size={10} className="fill-current text-emerald-400" /> : <Play size={10} className="fill-current" />}
+                              </button>
+                            )}
                           </div>
-                          {activeSelectedId === v.id && <Check size={13} className="shrink-0 text-emerald-400 ml-1" />}
-                        </button>
-                        {isLoggedIn && (
-                          <button onClick={(e) => { e.stopPropagation(); handlePreview(v.id, v.name.toLowerCase()); }}
-                            className="shrink-0 px-2.5 py-2 text-white/25 hover:text-white/70 transition-colors"
-                          >
-                            {isPreviewing ? <Square size={10} className="fill-current text-emerald-400" /> : <Play size={10} className="fill-current" />}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               )}
 

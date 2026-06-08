@@ -82,17 +82,26 @@ async function textToKey(text: string, voiceId: string): Promise<string> {
 // ── Voice config ──────────────────────────────────────────────────────────────
 
 export const PRESET_VOICES = [
-  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", desc: "British · Authoritative" },
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "American · Clear" },
-  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Assertive" },
+  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", desc: "British · Authoritative", preview: "daniel" },
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "American · Clear",        preview: "adam" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Assertive",        preview: "josh" },
 ] as const;
 
-// Indian male voices — add these to your account at elevenlabs.io/voice-library first
-export const HINGLISH_VOICES = [
-  { id: "pq8ptAFvXx1MBHKzOrML", name: "Ishaan", desc: "Indian · Teaching" },
-  { id: "E5Qzcir7Cv8tZdPyn2it", name: "Karn",   desc: "Indian · E-Learning" },
-  { id: "DP7PNHpRD6HfosXDaGHq", name: "Arjun",  desc: "Indian · Narrator" },
+// Indian male voices — ElevenLabs (add to your account at elevenlabs.io/voice-library first)
+export const HINGLISH_VOICES_EL = [
+  { id: "pq8ptAFvXx1MBHKzOrML", name: "Ishaan", desc: "Indian · Teaching",  preview: "ishaan" },
+  { id: "E5Qzcir7Cv8tZdPyn2it", name: "Karn",   desc: "Indian · E-Learning", preview: "karn" },
+  { id: "DP7PNHpRD6HfosXDaGHq", name: "Arjun",  desc: "Indian · Narrator",  preview: "arjun" },
 ] as const;
+
+// Indian male voices — Smallest AI (sai: prefix routes to Smallest AI in worker)
+export const HINGLISH_VOICES_SAI = [
+  { id: "sai:devansh", name: "Devansh", desc: "Hindi · Natural",  preview: "devansh" },
+  { id: "sai:kartik",  name: "Kartik",  desc: "Hindi · Clear",   preview: "kartik" },
+  { id: "sai:harsh",   name: "Harsh",   desc: "Hindi · Deep",    preview: "harsh" },
+] as const;
+
+export const HINGLISH_VOICES = [...HINGLISH_VOICES_EL, ...HINGLISH_VOICES_SAI];
 
 const VOICE_KEY = "jee-voice-id";
 const HINGLISH_VOICE_KEY = "jee-voice-hi";
