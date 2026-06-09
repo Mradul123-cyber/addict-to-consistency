@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, increment } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, increment } from "firebase/firestore";
 import { db } from "./firebase";
 
 export const FREE_PDF_LIMIT = 1;
@@ -53,12 +53,7 @@ export async function incrementAttachmentUsage(
 ): Promise<AttachmentUsage> {
   const field = kind === "pdf" ? "pdfUploadsUsed" : "imageUploadsUsed";
   try {
-    const snap = await getDoc(usageRef(uid));
-    if (!snap.exists()) {
-      await setDoc(usageRef(uid), { [field]: 1, updatedAt: serverTimestamp() }, { merge: true });
-    } else {
-      await updateDoc(usageRef(uid), { [field]: increment(1), updatedAt: serverTimestamp() });
-    }
+    await setDoc(usageRef(uid), { [field]: increment(1), updatedAt: serverTimestamp() }, { merge: true });
   } catch (err) {
     console.error("incrementAttachmentUsage failed:", err);
   }

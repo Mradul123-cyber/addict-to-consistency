@@ -37,7 +37,15 @@ async function getOrCreateIdbUuid(): Promise<string> {
   });
 }
 
+let deviceIdCache: Promise<string> | null = null;
+
 export async function generateDeviceId(): Promise<string> {
+  if (deviceIdCache) return deviceIdCache;
+  deviceIdCache = _computeDeviceId();
+  return deviceIdCache;
+}
+
+async function _computeDeviceId(): Promise<string> {
   // Canvas fingerprint
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");

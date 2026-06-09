@@ -79,26 +79,85 @@ async function textToKey(text: string, voiceId: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Azure TTS: browser calls Azure directly (Cloudflare Worker can't — centralindia.tts.speech.microsoft.com is behind Cloudflare CDN → loopback 400)
+// Worker issues a short-lived bearer token; browser uses it to call Azure TTS endpoint.
+async function fetchAzureAudioBuffer(text: string, voiceId: string, workerUrl: string, idToken: string | null, language?: "english" | "hinglish" | "hindi"): Promise<ArrayBuffer> {
+  const azureVoiceName = voiceId.slice(6);
+  const isDevanagari = /[ऀ-ॿ]/.test(text);
+  const isHindi = language === "hindi" || language === "hinglish";
+  const langCode = isDevanagari || isHindi ? "hi-IN" : azureVoiceName.startsWith("hi-IN") ? "hi-IN" : "en-US";
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='${langCode}'><voice name='${azureVoiceName}'>${escaped}</voice></speak>`;
+
+  const tokenRes = await fetch(`${workerUrl}/api/azure-token`, {
+    headers: { ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}) },
+  });
+  if (!tokenRes.ok) throw new Error(`Azure token error: ${tokenRes.status}`);
+  const { token } = await tokenRes.json() as { token: string };
+
+  const ttsRes = await fetch("https://centralindia.tts.speech.microsoft.com/cognitiveservices/v1", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "audio-24khz-160kbitrate-mono-mp3",
+    },
+    body: ssml,
+  });
+  if (!ttsRes.ok) {
+    const errBody = await ttsRes.text().catch(() => "(unreadable)");
+    throw new Error(`Azure TTS error: ${ttsRes.status} ${errBody}`);
+  }
+  return ttsRes.arrayBuffer();
+}
+
 // ── Voice config ──────────────────────────────────────────────────────────────
 
+// ElevenLabs — English
 export const PRESET_VOICES = [
   { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", desc: "British · Authoritative", preview: "daniel" },
   { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "American · Clear",        preview: "adam" },
   { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Assertive",        preview: "josh" },
 ] as const;
 
-// Indian male voices — ElevenLabs (add to your account at elevenlabs.io/voice-library first)
+// ElevenLabs — Indian (add to your account at elevenlabs.io/voice-library first)
 export const HINGLISH_VOICES_EL = [
   { id: "pq8ptAFvXx1MBHKzOrML", name: "Ishaan", desc: "Indian · Teaching",  preview: "ishaan" },
   { id: "E5Qzcir7Cv8tZdPyn2it", name: "Karn",   desc: "Indian · E-Learning", preview: "karn" },
   { id: "DP7PNHpRD6HfosXDaGHq", name: "Arjun",  desc: "Indian · Narrator",  preview: "arjun" },
 ] as const;
 
-// Indian male voices — Smallest AI (sai: prefix routes to Smallest AI in worker)
+// Smallest AI — Indian (sai: prefix routes to Smallest AI in worker)
 export const HINGLISH_VOICES_SAI = [
   { id: "sai:devansh", name: "Devansh", desc: "Hindi · Natural",  preview: "devansh" },
   { id: "sai:kartik",  name: "Kartik",  desc: "Hindi · Clear",   preview: "kartik" },
   { id: "sai:harsh",   name: "Harsh",   desc: "Hindi · Deep",    preview: "harsh" },
+] as const;
+
+// Google TTS Chirp3-HD — English (google: prefix routes to Google TTS in worker)
+export const GOOGLE_VOICES_EN = [
+  { id: "google:en-IN-Chirp3-HD-Charon",  name: "Charon",  desc: "Indian · Deep" },
+  { id: "google:en-IN-Chirp3-HD-Fenrir",  name: "Fenrir",  desc: "Indian · Clear" },
+  { id: "google:en-IN-Chirp3-HD-Iapetus", name: "Iapetus", desc: "Indian · Warm" },
+] as const;
+
+// Google TTS Chirp3-HD — Hindi/Hinglish
+export const GOOGLE_VOICES_HI = [
+  { id: "google:hi-IN-Chirp3-HD-Charon",  name: "Charon",  desc: "Hindi · Deep" },
+  { id: "google:hi-IN-Chirp3-HD-Fenrir",  name: "Fenrir",  desc: "Hindi · Clear" },
+  { id: "google:hi-IN-Chirp3-HD-Iapetus", name: "Iapetus", desc: "Hindi · Warm" },
+] as const;
+
+// Azure Neural HD — English (azure: prefix routes to Azure TTS in worker)
+export const AZURE_VOICES_EN = [
+  { id: "azure:en-US-BrianMultilingualNeural", name: "Brian", desc: "English · Natural" },
+  { id: "azure:hi-IN-Dhruv:MAI-Voice-2",       name: "Dhruv", desc: "Indian · Clear" },
+] as const;
+
+// Azure Neural HD — Hindi/Hinglish
+export const AZURE_VOICES_HI = [
+  { id: "azure:en-US-BrianMultilingualNeural", name: "Brian", desc: "Hindi · Warm" },
+  { id: "azure:hi-IN-Dhruv:MAI-Voice-2",       name: "Dhruv", desc: "Hindi · Deep" },
 ] as const;
 
 export const HINGLISH_VOICES = [...HINGLISH_VOICES_EL, ...HINGLISH_VOICES_SAI];
@@ -129,9 +188,21 @@ export function saveVoiceId(id: string): void {
 
 // ── Runtime state ─────────────────────────────────────────────────────────────
 
+import { SoundTouchNode } from '@soundtouchjs/audio-worklet';
+import processorUrl from '@soundtouchjs/audio-worklet/processor?url';
+
 let audioCtx: AudioContext | null = null;
 let currentSourceNode: AudioBufferSourceNode | null = null;
+let currentStNode: SoundTouchNode | null = null;
 let activeSpeechId = 0;
+let soundTouchRegistered = false;
+
+async function ensureSoundTouch(ctx: AudioContext): Promise<void> {
+  if (!soundTouchRegistered) {
+    await SoundTouchNode.register(ctx, processorUrl);
+    soundTouchRegistered = true;
+  }
+}
 let replayMode = false;
 
 const memCache = new Map<string, AudioBuffer>();
@@ -303,18 +374,22 @@ export async function prefetchAudio(
 
   await acquirePrefetchSlot();
   try {
-    // Re-check cache after waiting in queue — a prior prefetch may have filled it
     if (memCache.has(key)) return;
-    const response = await fetch(`${workerUrl}/api/tts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
-      },
-      body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
-    });
-    if (!response.ok) return;
-    const rawBuffer = await response.arrayBuffer();
+    let rawBuffer: ArrayBuffer;
+    if (voiceId.startsWith("azure:")) {
+      rawBuffer = await fetchAzureAudioBuffer(trimmed, voiceId, workerUrl, idToken ?? null, language);
+    } else {
+      const response = await fetch(`${workerUrl}/api/tts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
+      });
+      if (!response.ok) return;
+      rawBuffer = await response.arrayBuffer();
+    }
     void idbSet(key, rawBuffer.slice(0));
     const audioBuffer = await getAudioCtx().decodeAudioData(rawBuffer);
     memCache.set(key, audioBuffer);
@@ -352,22 +427,30 @@ export async function speakElement(text: string, idToken?: string | null, speed 
         memCache.set(key, audioBuffer);
       } else {
         if (replayMode) return;
-        const response = await fetch(`${workerUrl}/api/tts`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
-        });
+        let rawBuffer: ArrayBuffer;
+        if (voiceId.startsWith("azure:")) {
+          rawBuffer = await fetchAzureAudioBuffer(trimmed, voiceId, workerUrl, idToken ?? null, language);
+        } else {
+          const response = await fetch(`${workerUrl}/api/tts`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
+            },
+            body: JSON.stringify({ text: trimmed, voiceId, ...(language ? { language } : {}) }),
+          });
 
-        if (response.status === 429) {
-          _missedChunks.push({ text: trimmed, language });
-          return; // board renders silently — background fill will cache it later
+          if (response.status === 429) {
+            _missedChunks.push({ text: trimmed, language });
+            return;
+          }
+          if (!response.ok) {
+            const errBody = await response.text().catch(() => "(unreadable)");
+            console.error(`[TTS] ${response.status} voiceId=${voiceId} body=${errBody}`);
+            throw new Error(`TTS error: ${response.status}`);
+          }
+          rawBuffer = await response.arrayBuffer();
         }
-        if (!response.ok) throw new Error(`TTS error: ${response.status}`);
-
-        const rawBuffer = await response.arrayBuffer();
         void idbSet(key, rawBuffer.slice(0));
         audioBuffer = await ctx.decodeAudioData(rawBuffer);
         memCache.set(key, audioBuffer);
@@ -376,18 +459,30 @@ export async function speakElement(text: string, idToken?: string | null, speed 
 
     if (speechId !== activeSpeechId) return;
 
+    if (speed !== 1) await ensureSoundTouch(ctx);
+    if (speechId !== activeSpeechId) return;
+
     return new Promise<void>((resolve) => {
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
-      source.playbackRate.value = speed;
-      source.connect(ctx.destination);
       currentSourceNode = source;
+
+      if (speed !== 1) {
+        const stNode = new SoundTouchNode({ context: ctx });
+        stNode.connect(ctx.destination);
+        currentStNode = stNode;
+        source.playbackRate.value = speed;
+        stNode.playbackRate.value = speed; // processor auto-compensates pitch
+        source.connect(stNode);
+      } else {
+        source.connect(ctx.destination);
+      }
 
       let resolved = false;
       const done = () => {
         if (!resolved) {
           resolved = true;
-          if (currentSourceNode === source) currentSourceNode = null;
+          if (currentSourceNode === source) { currentSourceNode = null; currentStNode = null; }
           resolve();
         }
       };
@@ -405,6 +500,10 @@ export function stopCurrentSpeech() {
     try { currentSourceNode.stop(); currentSourceNode.disconnect(); }
     catch { /* already stopped */ }
     currentSourceNode = null;
+  }
+  if (currentStNode) {
+    try { currentStNode.disconnect(); } catch { }
+    currentStNode = null;
   }
 }
 

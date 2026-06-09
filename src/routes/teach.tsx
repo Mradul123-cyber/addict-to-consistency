@@ -520,8 +520,17 @@ function TeachPage() {
     });
   }, [user?.uid]);
 
-  const [promptCount, setPromptCount] = useState<number>(0);
-  const [quotaLoaded, setQuotaLoaded] = useState(false);
+  const [promptCount, setPromptCount] = useState<number>(() => {
+    if (!user?.uid) return 0;
+    try {
+      const cached = sessionStorage.getItem(`quota_${user.uid}`);
+      return cached !== null ? Number(cached) : 0;
+    } catch { return 0; }
+  });
+  const [quotaLoaded, setQuotaLoaded] = useState<boolean>(() => {
+    if (!user?.uid) return false;
+    try { return sessionStorage.getItem(`quota_${user.uid}`) !== null; } catch { return false; }
+  });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [introOpen, setIntroOpen] = useState(() => {
     try { return !localStorage.getItem("teach-intro-seen"); } catch { return false; }
@@ -538,7 +547,8 @@ function TeachPage() {
       setQuotaLoaded(true);
       return;
     }
-    setQuotaLoaded(false);
+    const hasCached = (() => { try { return sessionStorage.getItem(`quota_${user.uid}`) !== null; } catch { return false; } })();
+    if (!hasCached) setQuotaLoaded(false);
     getTeachPromptCount(user.uid).then((n) => {
       if (!cancelled) {
         setPromptCount(n);
@@ -634,10 +644,6 @@ function TeachPage() {
           const animPromise = new Promise<void>((resolve) => setTimeout(resolve, Math.round(delay / speedRef.current)));
 
           const speakText = next.speak ?? ("content" in next ? next.content : "");
-          const usingFallback = !next.speak && "content" in next;
-          if (drainLanguageRef.current !== "english") {
-            console.log(`[TTS] type=${next.type} | fallback=${usingFallback} | lang=${drainLanguageRef.current} | text="${speakText.slice(0, 80)}"`);
-          }
           const shouldSpeak = ttsEnabledRef.current && speakText.trim() !== "" && next.type !== "ai_divider";
           const speakToken = shouldSpeak && user ? await user.getIdToken() : null;
           const speakPromise = shouldSpeak ? speakElement(speakText, speakToken, speedRef.current, drainLanguageRef.current) : Promise.resolve();
@@ -1576,6 +1582,7 @@ function TeachPage() {
         ttsEnabled={ttsEnabled}
         speed={speed}
         onSpeedChange={handleSpeedChange}
+        speedLocked={isReplaying || (aiState !== "idle" && !isPaused)}
         modeBadge={mode ? `${getModeConfig(mode).name}${subMode === "3d" ? " · 3D Beta" : subMode === "2d" ? " · 2D Beta" : ` · ${getModeConfig(mode).persona}`}` : undefined}
         isGuest={isGuest}
         onOpenHistory={isGuest
@@ -1654,7 +1661,7 @@ function TeachPage() {
                 <ModeSelector
                   onSelect={(m) => { setMode(m); setChangeModeOpen(false); }}
                   isBlackboard={boardConfig.mode === "blackboard"}
-                  restrictedModes={isJeeUser ? ["jee", "general", "coding"] : undefined}
+                  restrictedModes={isJeeUser ? ["jee", "general", "coding", "sat"] : undefined}
                 />
               ) : (
                 <>

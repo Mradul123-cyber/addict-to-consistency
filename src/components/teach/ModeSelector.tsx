@@ -66,6 +66,15 @@ export const MODES: ModeConfig[] = [
     color: "border-pink-500/30 hover:border-pink-500/60",
     accent: "text-pink-400",
   },
+  {
+    id: "sat",
+    name: "SAT",
+    persona: "The Cold",
+    description: "Digital SAT prep with calm, strategic precision",
+    subjects: "Math · Reading · Writing",
+    color: "border-sky-500/30 hover:border-sky-500/60",
+    accent: "text-sky-400",
+  },
 ];
 
 export function getModeConfig(mode: TeachMode): ModeConfig {
@@ -84,6 +93,34 @@ export function ModeSelector({ onSelect, isBlackboard, restrictedModes }: ModeSe
     ? MODES.filter(m => restrictedModes.includes(m.id))
     : MODES;
 
+  const renderCard = (mode: ModeConfig, i: number) => (
+    <motion.button
+      key={mode.id}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: i * 0.05 }}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={() => onSelect(mode.id)}
+      className={`flex flex-col items-start gap-1.5 rounded-xl border bg-white/5 p-4 text-left transition-colors ${mode.color}`}
+    >
+      <div className="flex items-center justify-between w-full">
+        <span className={`text-sm font-bold ${isBlackboard ? "text-neutral-100" : "text-neutral-900"}`}>
+          {mode.name}
+        </span>
+      </div>
+      <span className={`text-xs font-semibold ${mode.accent}`}>
+        {mode.persona}
+      </span>
+      <p className={`text-xs leading-snug ${isBlackboard ? "text-neutral-400" : "text-neutral-500"}`}>
+        {mode.description}
+      </p>
+      <p className={`text-[10px] mt-0.5 ${isBlackboard ? "text-neutral-500" : "text-neutral-400"}`}>
+        {mode.subjects}
+      </p>
+    </motion.button>
+  );
+
   return (
     <div className="flex flex-col items-center justify-center h-full py-8 px-4">
       <motion.div
@@ -100,35 +137,19 @@ export function ModeSelector({ onSelect, isBlackboard, restrictedModes }: ModeSe
         </p>
       </motion.div>
 
-      <div className={`grid gap-3 w-full ${visibleModes.length <= 3 ? "max-w-xl grid-cols-1 sm:grid-cols-3" : "max-w-2xl grid-cols-2 md:grid-cols-3"}`}>
-        {visibleModes.map((mode, i) => (
-          <motion.button
-            key={mode.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: i * 0.05 }}
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onSelect(mode.id)}
-            className={`flex flex-col items-start gap-1.5 rounded-xl border bg-white/5 p-4 text-left transition-colors ${mode.color}`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <span className={`text-sm font-bold ${isBlackboard ? "text-neutral-100" : "text-neutral-900"}`}>
-                {mode.name}
-              </span>
+      {visibleModes.length > 4 ? (
+        <div className="flex flex-col gap-3 w-full max-w-3xl">
+          {[visibleModes.slice(0, 3), visibleModes.slice(3)].map((row, rowIdx) => (
+            <div key={rowIdx} className={`grid gap-3 ${row.length === 3 ? "grid-cols-3 max-w-xl mx-auto w-full" : "grid-cols-2 sm:grid-cols-4 w-full"}`}>
+              {row.map((mode, i) => renderCard(mode, rowIdx * 3 + i))}
             </div>
-            <span className={`text-xs font-semibold ${mode.accent}`}>
-              {mode.persona}
-            </span>
-            <p className={`text-xs leading-snug ${isBlackboard ? "text-neutral-400" : "text-neutral-500"}`}>
-              {mode.description}
-            </p>
-            <p className={`text-[10px] mt-0.5 ${isBlackboard ? "text-neutral-500" : "text-neutral-400"}`}>
-              {mode.subjects}
-            </p>
-          </motion.button>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className={`grid gap-3 w-full ${visibleModes.length <= 3 ? "max-w-xl grid-cols-1 sm:grid-cols-3" : "max-w-3xl grid-cols-2 sm:grid-cols-4"}`}>
+          {visibleModes.map((mode, i) => renderCard(mode, i))}
+        </div>
+      )}
     </div>
   );
 }

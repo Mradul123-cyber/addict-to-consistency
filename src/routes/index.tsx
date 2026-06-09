@@ -150,7 +150,7 @@ function WeeklyDigestCard({
             <span className="text-xs font-bold tracking-widest text-muted-foreground uppercase">
               Weekly Digest
             </span>
-            <p className="text-xl font-bold text-foreground leading-snug">
+            <p className="text-base sm:text-xl font-bold text-foreground leading-snug">
               {emoji} {text}
             </p>
           </div>
@@ -185,7 +185,7 @@ function WeeklyDigestCard({
             <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-3">
               <img src="/icons/clock.png" alt="Focus Time" className="h-8 w-8 shrink-0" />
               <div className="min-w-0 leading-tight">
-                <div className="text-base font-bold tabular-nums text-foreground">{hoursLabel}</div>
+                <div className="text-sm sm:text-base font-bold tabular-nums text-foreground">{hoursLabel}</div>
                 <div className="text-xs text-muted-foreground">Focus Time</div>
               </div>
             </div>
@@ -193,7 +193,7 @@ function WeeklyDigestCard({
             <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-3">
               <img src="/icons/goal.png" alt="Goal Days" className="h-8 w-8 shrink-0" />
               <div className="min-w-0 leading-tight">
-                <div className="text-base font-bold text-foreground">{goalLabel}</div>
+                <div className="text-[11px] sm:text-base font-bold text-foreground leading-tight">{goalLabel}</div>
                 <div className="text-xs text-muted-foreground">Goal Days</div>
               </div>
             </div>
@@ -201,7 +201,7 @@ function WeeklyDigestCard({
             <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-3">
               <img src="/icons/star.png" alt="Avg Rating" className="h-8 w-8 shrink-0" />
               <div className="min-w-0 leading-tight">
-                <div className="text-base font-bold tabular-nums text-foreground">
+                <div className="text-sm sm:text-base font-bold tabular-nums text-foreground">
                   {avgRating != null ? avgRating.toFixed(1) : "—"}
                   {avgRating != null && <span className="text-xs font-normal text-muted-foreground">/5</span>}
                 </div>
@@ -212,7 +212,7 @@ function WeeklyDigestCard({
             <div className="flex items-center gap-3 rounded-lg bg-muted/40 p-3">
               <img src="/icons/book.png" alt="Top Subject" className="h-8 w-8 shrink-0" />
               <div className="min-w-0 leading-tight">
-                <div className="text-base font-bold text-foreground truncate">{topSubject ?? "—"}</div>
+                <div className="text-sm sm:text-base font-bold text-foreground truncate">{topSubject ?? "—"}</div>
                 <div className="text-xs text-muted-foreground">Top Subject</div>
               </div>
             </div>
@@ -243,7 +243,7 @@ function WeeklyDigestCard({
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-foreground tabular-nums leading-none">{hitsCount}/7</span>
+              <span className="text-2xl sm:text-3xl font-black text-foreground tabular-nums leading-none">{hitsCount}/7</span>
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mt-1">
                 Days Hit
               </span>
@@ -360,14 +360,14 @@ function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Stay consistent. The exam doesn't move.</p>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Stay consistent. The exam doesn't move.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 text-xs"
+            className="h-8 gap-1.5 text-xs shrink-0"
             onClick={() => setDigestOpen((o) => !o)}
           >
             {digestOpen ? (
@@ -377,7 +377,7 @@ function Dashboard() {
             )}
             {digestOpen ? "Hide digest" : "Weekly Digest"}
           </Button>
-          <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg">
+          <Button asChild className="transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-lg shrink-0 text-xs sm:text-sm">
             <Link to="/focus" search={{ subject: "" }}>Start focus session</Link>
           </Button>
         </div>
@@ -401,7 +401,7 @@ function Dashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">JEE Countdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold tabular-nums">{days}</div>
+            <div className="text-3xl sm:text-4xl font-semibold tabular-nums">{days}</div>
             <div className="text-xs text-muted-foreground">days until {examLabel}</div>
           </CardContent>
         </Card>
@@ -410,7 +410,7 @@ function Dashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Current Streak</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold tabular-nums">
+            <div className="text-3xl sm:text-4xl font-semibold tabular-nums">
               {streak} {streak === 1 ? "day" : "days"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
@@ -431,7 +431,7 @@ function Dashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Today</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold tabular-nums">{today}</div>
+            <div className="text-3xl sm:text-4xl font-semibold tabular-nums">{today}</div>
             <Progress value={Math.min(100, (today / dailyGoalMinutes) * 100)} className="mt-2" />
             <div className="mt-1 text-xs text-muted-foreground">
               minutes logged today · goal {dailyGoalMinutes}m
@@ -452,7 +452,7 @@ function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold tabular-nums">{cq != null ? `${cq}%` : "—"}</div>
+            <div className="text-3xl sm:text-4xl font-semibold tabular-nums">{cq != null ? `${cq}%` : "—"}</div>
             <Progress value={cq ?? 0} className="mt-2" />
             <div className="mt-1 text-xs text-muted-foreground">
               ≥{dailyGoalMinutes} min days, last 7

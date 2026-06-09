@@ -33,6 +33,7 @@
         "@radix-ui/react-toggle": "^1.1.10",
         "@radix-ui/react-toggle-group": "^1.1.11",
         "@radix-ui/react-tooltip": "^1.2.8",
+        "@soundtouchjs/audio-worklet": "^2.0.3",
         "@tailwindcss/vite": "^4.2.1",
         "@tanstack/react-query": "^5.83.0",
         "@tanstack/react-router": "^1.168.25",
@@ -698,6 +699,14 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.2", "", { "os": "win32", "cpu": "x64" }, "sha512-Nd/SgG27WoA9e+/TdK74KnHz852TLa94ovOYySo/yMPuTmpckK/jIF2jSwS3g7ELSKXK13/cVdmg1Z/DaCWKxA=="],
 
     "@sindresorhus/is": ["@sindresorhus/is@7.2.0", "", {}, "sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw=="],
+
+    "@soundtouchjs/audio-worklet": ["@soundtouchjs/audio-worklet@2.0.3", "", { "dependencies": { "@soundtouchjs/core": "2.0.3", "@soundtouchjs/interpolation-strategy-lanczos": "2.0.3", "@soundtouchjs/worklet-base": "2.0.3" } }, "sha512-lx85tUfHVp+uFyrsMm7EXQb9W/8Icectt/b8rE23l1W/wcHJCd0/mtguen+bRJg7sVE/KbXSWtQr4IZBHzkPfQ=="],
+
+    "@soundtouchjs/core": ["@soundtouchjs/core@2.0.3", "", { "dependencies": { "@soundtouchjs/interpolation-strategy-lanczos": "2.0.3" } }, "sha512-dNlV/HP7HERm8/FCYLiWivlb3V9rrkFEUMPhazznkPd8EhsRDhewfd3r3QCW2YopOgZygukkhD+vjnTMMpQvVw=="],
+
+    "@soundtouchjs/interpolation-strategy-lanczos": ["@soundtouchjs/interpolation-strategy-lanczos@2.0.3", "", {}, "sha512-o20uWwvlCiQ2gB6nE2i4Tl9KsAHOoZoo+0rrBKbervg7cb1SDWgmBOdoL3bsL2Dvm8d6xeE6ufIf6caYCsYWhw=="],
+
+    "@soundtouchjs/worklet-base": ["@soundtouchjs/worklet-base@2.0.3", "", { "dependencies": { "@soundtouchjs/core": "2.0.3" } }, "sha512-nnS7l1XuvmesbZP1GNkT5uZL1q6PcP2gPsqC/yH+7oit6s5mdfaBvp3hzSEaP1rsRca6vxVoOV4GnO3wWiVfEA=="],
 
     "@speed-highlight/core": ["@speed-highlight/core@1.2.15", "", {}, "sha512-BMq1K3DsElxDWawkX6eLg9+CKJrTVGCBAWVuHXVUV2u0s2711qiChLSId6ikYPfxhdYocLNt3wWwSvDiTvFabw=="],
 

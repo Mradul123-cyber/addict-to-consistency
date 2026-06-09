@@ -37,11 +37,11 @@ export function FormulaBlock({ expr, label, bookmarked, highlighted, onToggleBoo
               {label}
             </div>
           )}
-          <code className="block break-words font-mono text-[15px] leading-relaxed text-formula-foreground">
+          <code className="block break-words overflow-x-auto font-mono text-[14px] sm:text-[15px] leading-relaxed text-formula-foreground">
             {expr}
           </code>
         </div>
-        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
           <button
             type="button"
             onClick={onToggleBookmark}

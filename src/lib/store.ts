@@ -231,6 +231,8 @@ function syncSubscription(uid: string | null, onStoreChange: () => void) {
   const previousUid = currentSubscriptionUid;
   currentSubscriptionUid = uid;
 
+  seedWriteInFlight = false;
+
   // Cleanup old subscription
   if (unsubscribeSessions) {
     unsubscribeSessions();

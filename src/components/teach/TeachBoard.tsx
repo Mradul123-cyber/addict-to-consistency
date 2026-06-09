@@ -53,6 +53,7 @@ export function TeachBoard({
   modeBadge,
   isGuest = false,
   onShowMobileControls,
+  speedLocked = false,
   isCanvasActive = false,
   canvasRef,
   canvasTool = "pen",
@@ -68,6 +69,7 @@ export function TeachBoard({
   modeBadge?: string;
   isGuest?: boolean;
   onShowMobileControls?: () => void;
+  speedLocked?: boolean;
 }) {
   const { isDark } = useTheme();
   const isBlackboard = config.mode === "blackboard";
@@ -155,32 +157,41 @@ export function TeachBoard({
               </button>
             )}
             {!isGuest && onSpeedChange && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button title={`Speed: ${formatSpeed(speed)}`} className={iconBtn}>
-                    <Gauge size={15} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  className={`min-w-[7rem] ${isBlackboard ? "bg-neutral-900 border-white/10 text-neutral-100" : "bg-white border-neutral-200 text-neutral-900"}`}
+              speedLocked ? (
+                <button
+                  title="Speed locked during playback"
+                  className={`${iconBtn} opacity-35 cursor-not-allowed`}
                 >
-                  {SPEED_STEPS.map((s) => (
-                    <DropdownMenuItem
-                      key={s}
-                      onSelect={() => onSpeedChange(s)}
-                      className={`flex items-center justify-between cursor-pointer ${
-                        isBlackboard
-                          ? "focus:bg-white/10 hover:bg-white/10 focus:text-neutral-100 text-neutral-100"
-                          : "focus:bg-neutral-100 hover:bg-neutral-100 focus:text-neutral-900 text-neutral-900"
-                      } ${s === speed ? "font-semibold" : ""}`}
-                    >
-                      <span>{formatSpeed(s)}</span>
-                      {s === speed && <span className="text-emerald-500 text-xs">✓</span>}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <Gauge size={15} />
+                </button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title={`Speed: ${formatSpeed(speed)}`} className={iconBtn}>
+                      <Gauge size={15} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className={`min-w-[7rem] ${isBlackboard ? "bg-neutral-900 border-white/10 text-neutral-100" : "bg-white border-neutral-200 text-neutral-900"}`}
+                  >
+                    {SPEED_STEPS.map((s) => (
+                      <DropdownMenuItem
+                        key={s}
+                        onSelect={() => onSpeedChange(s)}
+                        className={`flex items-center justify-between cursor-pointer ${
+                          isBlackboard
+                            ? "focus:bg-white/10 hover:bg-white/10 focus:text-neutral-100 text-neutral-100"
+                            : "focus:bg-neutral-100 hover:bg-neutral-100 focus:text-neutral-900 text-neutral-900"
+                        } ${s === speed ? "font-semibold" : ""}`}
+                      >
+                        <span>{formatSpeed(s)}</span>
+                        {s === speed && <span className="text-emerald-500 text-xs">✓</span>}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
             )}
             {!isGuest && onNewSession && (
               <button onClick={onNewSession} title="New session" className={iconBtn}>

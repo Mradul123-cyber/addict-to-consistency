@@ -227,36 +227,39 @@ export function StudyCalendar({
     <div className="space-y-4" ref={calendarRef}>
       <div className="rounded-2xl ring-1 ring-border bg-card overflow-hidden shadow-sm">
         {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-foreground">
-              {viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-            </h2>
-            <div className="flex gap-px rounded-md overflow-hidden ring-1 ring-border">
-              <button onClick={goPrev} className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" aria-label="Previous month">‹</button>
-              <button onClick={goNext} className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" aria-label="Next month">›</button>
-            </div>
-            {!isCurrentMonth && (
-              <button onClick={goToday} className="text-xs font-semibold px-2.5 py-1 bg-muted/60 rounded-md hover:bg-muted transition-colors">
-                Today
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2.5">
-            {SUBJECT_ORDER.map((code) => (
-              <div key={code} className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: SUBJECT_COLORS[code] }} />
-                <span className="text-[11px] font-semibold text-muted-foreground tracking-tight">{code}</span>
+          <div className="flex flex-col gap-2 px-4 sm:px-5 py-3 sm:py-4 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <h2 className="text-base sm:text-lg font-bold text-foreground">
+                {viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              </h2>
+              <div className="flex gap-px rounded-md overflow-hidden ring-1 ring-border">
+                <button onClick={goPrev} className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" aria-label="Previous month">‹</button>
+                <button onClick={goNext} className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" aria-label="Next month">›</button>
               </div>
-            ))}
+              {!isCurrentMonth && (
+                <button onClick={goToday} className="text-xs font-semibold px-2.5 py-1 bg-muted/60 rounded-md hover:bg-muted transition-colors">
+                  Today
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2.5">
+              {SUBJECT_ORDER.map((code) => (
+                <div key={code} className="flex items-center gap-0.5 sm:gap-1">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SUBJECT_COLORS[code] }} />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-muted-foreground tracking-tight">{code}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-border bg-muted/20">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <div key={d} className="py-2.5 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-              {d}
+          {[["Mon","M"], ["Tue","T"], ["Wed","W"], ["Thu","T"], ["Fri","F"], ["Sat","S"], ["Sun","S"]].map(([full, short]) => (
+            <div key={full} className="py-2 sm:py-2.5 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              <span className="hidden sm:inline">{full}</span>
+              <span className="sm:hidden">{short}</span>
             </div>
           ))}
         </div>
@@ -359,7 +362,7 @@ export function StudyCalendar({
 
         {/* ─── Detail Panel ───────────────────────────────────────── */}
         {selectedDateISO && (
-          <div className="border-t border-border bg-muted/20 px-5 py-4">
+          <div className="border-t border-border bg-muted/20 px-3 sm:px-5 py-3 sm:py-4">
             <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
               <div>
                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -421,14 +424,18 @@ export function StudyCalendar({
       </div>
 
       {/* ─── Stats ────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between rounded-2xl ring-1 ring-border bg-card px-5 py-3.5 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <Flame className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">{stats.streak} day streak</span>
+      <div className="flex items-center justify-between rounded-2xl ring-1 ring-border bg-card px-4 sm:px-5 py-3 sm:py-3.5 shadow-sm gap-2">
+        <div className="flex items-center gap-2">
+          <Flame className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-xs sm:text-sm font-semibold text-foreground">{stats.streak} day streak</span>
         </div>
-        <div className="flex items-center gap-2.5">
-          <Target className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">{stats.hits}/{stats.elapsed} days hit this month</span>
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-xs sm:text-sm font-semibold text-foreground">
+            <span>{stats.hits}/{stats.elapsed}</span>
+            <span className="hidden sm:inline"> days hit this month</span>
+            <span className="sm:hidden"> hit</span>
+          </span>
         </div>
       </div>
     </div>

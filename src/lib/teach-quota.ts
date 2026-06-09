@@ -2,7 +2,6 @@ import {
   doc,
   getDoc,
   setDoc,
-  updateDoc,
   serverTimestamp,
   increment,
 } from "firebase/firestore";
@@ -35,17 +34,12 @@ export async function getTeachPromptCount(uid: string): Promise<number> {
 
 export async function incrementTeachPromptCount(uid: string): Promise<number> {
   const ref = quotaRef(uid);
+  const cacheKey = `quota_${uid}`;
   try {
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, { promptCount: 1, updatedAt: serverTimestamp() });
-      sessionStorage.setItem(`quota_${uid}`, "1");
-      return 1;
-    }
-    const current = (snap.data() as { promptCount?: number }).promptCount ?? 0;
-    await updateDoc(ref, { promptCount: increment(1), updatedAt: serverTimestamp() });
-    const next = current + 1;
-    sessionStorage.setItem(`quota_${uid}`, String(next));
+    await setDoc(ref, { promptCount: increment(1), updatedAt: serverTimestamp() }, { merge: true });
+    const prev = Number(sessionStorage.getItem(cacheKey) ?? "0");
+    const next = prev + 1;
+    sessionStorage.setItem(cacheKey, String(next));
     return next;
   } catch (err) {
     console.error("incrementTeachPromptCount failed:", err);

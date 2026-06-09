@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 
@@ -482,59 +482,52 @@ function useAirgapInternal() {
     }
 
     const userDocRef = doc(db, "users", user.uid);
-    let airgapNormalized = false; // allow at most one normalization write per subscription lifecycle
+    let cancelled = false;
 
-    const unsubscribe = onSnapshot(
-      userDocRef,
-      async (snapshot) => {
-        const data = snapshot.data();
-        const nextBlocklist = Array.isArray(data?.airgapBlocklist)
-          ? sanitizeBlocklist(data.airgapBlocklist)
-          : DEFAULT_BLOCKLIST;
-        const nextKeywords = Array.isArray(data?.airgapKeywords)
-          ? sanitizeKeywords(data.airgapKeywords)
-          : DEFAULT_KEYWORDS;
-        const nextHealthySites = Array.isArray(data?.airgapHealthySites)
-          ? sanitizeBlocklist(data.airgapHealthySites)
-          : DEFAULT_HEALTHY_SITES;
+    getDoc(userDocRef).then(async (snapshot) => {
+      if (cancelled) return;
+      const data = snapshot.data();
+      const nextBlocklist = Array.isArray(data?.airgapBlocklist)
+        ? sanitizeBlocklist(data.airgapBlocklist)
+        : DEFAULT_BLOCKLIST;
+      const nextKeywords = Array.isArray(data?.airgapKeywords)
+        ? sanitizeKeywords(data.airgapKeywords)
+        : DEFAULT_KEYWORDS;
+      const nextHealthySites = Array.isArray(data?.airgapHealthySites)
+        ? sanitizeBlocklist(data.airgapHealthySites)
+        : DEFAULT_HEALTHY_SITES;
 
-        setBlocklist(nextBlocklist);
-        setKeywords(nextKeywords);
-        setHealthySites(nextHealthySites);
-        setIsPreferencesReady(true);
+      setBlocklist(nextBlocklist);
+      setKeywords(nextKeywords);
+      setHealthySites(nextHealthySites);
+      setIsPreferencesReady(true);
 
-        const shouldSeedBlocklist = !Array.isArray(data?.airgapBlocklist);
-        const shouldSeedKeywords = !Array.isArray(data?.airgapKeywords);
-        const shouldSeedHealthySites = !Array.isArray(data?.airgapHealthySites);
-        const shouldNormalizeBlocklist =
-          Array.isArray(data?.airgapBlocklist) && !arraysEqual(nextBlocklist, data.airgapBlocklist);
-        const shouldNormalizeKeywords =
-          Array.isArray(data?.airgapKeywords) && !arraysEqual(nextKeywords, data.airgapKeywords);
-        const shouldNormalizeHealthySites =
-          Array.isArray(data?.airgapHealthySites) &&
-          !arraysEqual(nextHealthySites, data.airgapHealthySites);
+      const needsWrite =
+        !Array.isArray(data?.airgapBlocklist) ||
+        !Array.isArray(data?.airgapKeywords) ||
+        !Array.isArray(data?.airgapHealthySites) ||
+        !arraysEqual(nextBlocklist, data?.airgapBlocklist ?? []) ||
+        !arraysEqual(nextKeywords, data?.airgapKeywords ?? []) ||
+        !arraysEqual(nextHealthySites, data?.airgapHealthySites ?? []);
 
-        const _needsWrite = shouldSeedBlocklist || shouldSeedKeywords || shouldSeedHealthySites || shouldNormalizeBlocklist || shouldNormalizeKeywords || shouldNormalizeHealthySites;
-        if (_needsWrite && !airgapNormalized && !snapshot.metadata.hasPendingWrites) {
-          airgapNormalized = true;
-          await setDoc(
-            userDocRef,
-            {
-              airgapBlocklist: nextBlocklist,
-              airgapKeywords: nextKeywords,
-              airgapHealthySites: nextHealthySites,
-            },
-            { merge: true },
-          );
-        }
-      },
-      (error) => {
-        console.error("Failed to subscribe to Airgap preferences:", error);
-        setIsPreferencesReady(true);
-      },
-    );
+      if (needsWrite && !cancelled) {
+        await setDoc(
+          userDocRef,
+          {
+            airgapBlocklist: nextBlocklist,
+            airgapKeywords: nextKeywords,
+            airgapHealthySites: nextHealthySites,
+          },
+          { merge: true },
+        );
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      console.error("Failed to fetch Airgap preferences:", error);
+      setIsPreferencesReady(true);
+    });
 
-    return () => unsubscribe();
+    return () => { cancelled = true; };
   }, [user]);
 
   // Poll every 3s — catches extension removal without page reload

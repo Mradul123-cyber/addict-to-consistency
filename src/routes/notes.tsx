@@ -86,23 +86,23 @@ function NotesRoute() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 md:py-16">
+    <div className="mx-auto max-w-4xl px-4 py-6 md:py-16">
       <motion.div
-        className="mb-10 text-center"
+        className="mb-6 md:mb-10 text-center"
         custom={0} variants={fadeUp} initial="hidden" animate="visible"
       >
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Notes</h1>
-        <p className="mt-2 text-muted-foreground">Choose your study resource</p>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl">Notes</h1>
+        <p className="mt-1.5 text-sm sm:text-base text-muted-foreground">Choose your study resource</p>
       </motion.div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-4 sm:gap-5 md:grid-cols-2">
         {/* Matrix Notes */}
         <motion.button
           custom={1} variants={fadeUp} initial="hidden" animate="visible"
           whileHover={{ scale: 1.01, transition: { duration: 0.15 } }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setView("matrix")}
-          className="group flex flex-col items-start gap-5 rounded-2xl border bg-card p-7 text-left transition-colors hover:border-foreground/30"
+          className="group flex flex-col items-start gap-4 sm:gap-5 rounded-2xl border bg-card p-5 sm:p-7 text-left transition-colors hover:border-foreground/30"
         >
           <div className="flex w-full items-start justify-between">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground/8">
@@ -114,7 +114,7 @@ function NotesRoute() {
             </Badge>
           </div>
           <div>
-            <h2 className="text-xl font-bold">Matrix Notes</h2>
+            <h2 className="text-lg sm:text-xl font-bold">Matrix Notes</h2>
             <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
               Curated chapter notes, key formulas and concept breakdowns crafted specifically for JEE preparation.
             </p>
@@ -134,7 +134,7 @@ function NotesRoute() {
           whileHover={{ scale: 1.01, transition: { duration: 0.15 } }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setView("community")}
-          className="group flex flex-col items-start gap-5 rounded-2xl border bg-card p-7 text-left transition-colors hover:border-foreground/30"
+          className="group flex flex-col items-start gap-4 sm:gap-5 rounded-2xl border bg-card p-5 sm:p-7 text-left transition-colors hover:border-foreground/30"
         >
           <div className="flex w-full items-start justify-between">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground/8">
@@ -146,7 +146,7 @@ function NotesRoute() {
             </Badge>
           </div>
           <div>
-            <h2 className="text-xl font-bold">Community Notes</h2>
+            <h2 className="text-lg sm:text-xl font-bold">Community Notes</h2>
             <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
               Notes uploaded by students like you. Multiple perspectives on the same chapter, peer reviewed and approved by the community.
             </p>

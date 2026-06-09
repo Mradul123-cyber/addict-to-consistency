@@ -157,30 +157,31 @@ export function CommunityNotesBrowser() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Community Notes</h2>
-          <p className="text-sm text-muted-foreground">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-semibold">Community Notes</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Student-uploaded notes · {APPROVAL_THRESHOLD} upvotes to publish
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Upload Notes
+        <Button onClick={() => setUploadOpen(true)} className="shrink-0 gap-1.5 text-xs sm:text-sm px-3 sm:px-4">
+          <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline">Upload Notes</span>
+          <span className="sm:hidden">Upload</span>
         </Button>
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex rounded-lg border p-1 gap-1 w-fit">
+      <div className="flex rounded-lg border p-1 gap-1 w-full sm:w-fit overflow-x-auto">
         {([
           { key: "all", label: "All Notes", count: counts.all },
           { key: "verified", label: "Verified", count: counts.verified },
-          { key: "unverified", label: "Needs Review", count: counts.unverified },
+          { key: "unverified", label: "Review", count: counts.unverified },
         ] as const).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
               tab === t.key
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground"
@@ -199,12 +200,13 @@ export function CommunityNotesBrowser() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Filter className="h-4 w-4" />
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 sm:items-center">
+        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+          <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span className="sm:hidden font-medium">Filters</span>
         </div>
         <Select value={filterSubject} onValueChange={v => { setFilterSubject(v as any); setFilterChapter("all"); }}>
-          <SelectTrigger className="w-36 h-8 text-sm">
+          <SelectTrigger className="w-full sm:w-36 h-8 text-xs sm:text-sm">
             <SelectValue placeholder="All subjects" />
           </SelectTrigger>
           <SelectContent>
@@ -214,7 +216,7 @@ export function CommunityNotesBrowser() {
         </Select>
 
         <Select value={filterChapter} onValueChange={setFilterChapter}>
-          <SelectTrigger className="w-44 h-8 text-sm">
+          <SelectTrigger className="w-full sm:w-44 h-8 text-xs sm:text-sm">
             <SelectValue placeholder="All chapters" />
           </SelectTrigger>
           <SelectContent>

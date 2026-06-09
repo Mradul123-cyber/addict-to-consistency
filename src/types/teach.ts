@@ -168,7 +168,7 @@ export type BoardElement = (
   | { id: string; type: "ai_code"; language: string; code: string; label?: string }
 ) & { speak?: string };
 
-export type TeachMode = "jee" | "neet" | "general" | "coding" | "upsc" | "marketing";
+export type TeachMode = "jee" | "neet" | "general" | "coding" | "upsc" | "marketing" | "sat";
 export type SubMode = "general" | "3d" | "2d";
 
 // ─── Canvas ───────────────────────────────────────────────────────────────────

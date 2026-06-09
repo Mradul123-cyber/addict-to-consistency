@@ -541,7 +541,7 @@ export default function MatrixApp() {
           </div>
 
           <NotesSearchBar
-            className="min-w-0 flex-1 md:max-w-md"
+            className="basis-full sm:basis-auto min-w-0 sm:flex-1 sm:max-w-md"
             search={search}
             onSearchChange={setSearch}
             searchFocus={searchFocus}
@@ -702,7 +702,7 @@ export default function MatrixApp() {
           ) : chapter ? (
             <div
               key={chapter.id + tab}
-              className="animate-fade-in mx-auto max-w-3xl px-5 py-8 md:px-10"
+              className="animate-fade-in mx-auto max-w-3xl px-4 sm:px-5 py-5 sm:py-8 md:px-10"
             >
               <div
                 className={cn(
@@ -715,7 +715,7 @@ export default function MatrixApp() {
                 />
                 {subject?.name}
               </div>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">{chapter.name}</h1>
+              <h1 className="mt-2 sm:mt-3 text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl">{chapter.name}</h1>
 
               {chapterFlags && (chapterFlags.hasNotes || chapterFlags.hasFormulas) && (
                 <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -764,7 +764,7 @@ export default function MatrixApp() {
                           key={i}
                           id={id}
                           data-section={id}
-                          className="mt-8 scroll-mt-6 text-xl font-semibold tracking-tight first:mt-0"
+                          className="mt-6 sm:mt-8 scroll-mt-6 text-lg sm:text-xl font-semibold tracking-tight first:mt-0"
                         >
                           {b.text}
                         </h2>
@@ -904,7 +904,7 @@ export default function MatrixApp() {
 
       {revisionOpen && chapter && (
         <div className="scrollbar-thin animate-fade-in fixed inset-0 z-50 overflow-y-auto bg-background">
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-5 py-3 backdrop-blur">
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/95 px-4 sm:px-5 py-3 backdrop-blur gap-3">
             <div>
               <div className="text-[10px] font-semibold tracking-wider text-accent uppercase">
                 Quick Revision
@@ -919,7 +919,7 @@ export default function MatrixApp() {
               Close <Kbd>Esc</Kbd>
             </button>
           </div>
-          <div className="mx-auto max-w-6xl p-5 md:p-8">
+          <div className="mx-auto max-w-6xl p-4 sm:p-5 md:p-8">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {(revisionFormulas ?? [])
                 .filter((b) => b.type === "formula")
@@ -949,7 +949,7 @@ export default function MatrixApp() {
       )}
 
       {bookmarksOpen && (
-        <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-20">
+        <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-12 sm:pt-20">
           <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-2">
@@ -1173,14 +1173,14 @@ function LibraryView({
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
-    <div className="animate-fade-in mx-auto max-w-6xl px-5 py-10 md:px-8">
-      <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-6">
+    <div className="animate-fade-in mx-auto max-w-6xl px-4 sm:px-5 py-6 sm:py-10 md:px-8">
+      <div className="mb-6 sm:mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-6">
         <div className="min-w-0 flex-1">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             <Sparkles className="h-3 w-3 text-accent" />
             JEE Vault
           </div>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">
+          <h1 className="mt-2 sm:mt-3 text-2xl font-bold tracking-tight sm:text-3xl md:text-4xl">
             Your library, organised.
           </h1>
           <p className="mt-1.5 max-w-lg text-sm text-muted-foreground">
@@ -1320,7 +1320,7 @@ function LibraryView({
         })}
       </div>
 
-      <div className="mt-10 flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
+      <div className="mt-6 sm:mt-10 flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <Kbd>N</Kbd> Notes
         </span>

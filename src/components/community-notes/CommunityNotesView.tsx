@@ -266,15 +266,16 @@ export function CommunityNotesView() {
         transition={{ duration: 0.35 }}
         className="flex items-start justify-between gap-4"
       >
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Community Notes</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">Community Notes</h1>
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
             Student-uploaded notes · {APPROVAL_THRESHOLD} upvotes to earn Verified badge
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)} className="shrink-0 gap-2">
-          <Plus className="h-4 w-4" />
-          Upload Notes
+        <Button onClick={() => setUploadOpen(true)} className="shrink-0 gap-1.5 text-xs sm:text-sm px-3 sm:px-4">
+          <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline">Upload Notes</span>
+          <span className="sm:hidden">Upload</span>
         </Button>
       </motion.div>
 
@@ -310,7 +311,7 @@ export function CommunityNotesView() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3, delay: 0.1 }}
-        className="flex flex-wrap items-center gap-3"
+        className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3"
       >
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -319,7 +320,7 @@ export function CommunityNotesView() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by title..."
-            className="h-8 w-48 rounded-full border bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full sm:w-48 rounded-full border bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
           {search && (
             <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -327,10 +328,10 @@ export function CommunityNotesView() {
             </button>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => { setFilterSubject("all"); setFilterChapter("all"); }}
-            className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
               filterSubject === "all" ? "bg-foreground text-background border-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -340,7 +341,7 @@ export function CommunityNotesView() {
             <button
               key={s.value}
               onClick={() => { setFilterSubject(s.value); setFilterChapter("all"); }}
-              className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
                 filterSubject === s.value ? s.color : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -349,7 +350,7 @@ export function CommunityNotesView() {
           ))}
         </div>
         <Select value={filterChapter} onValueChange={setFilterChapter}>
-          <SelectTrigger className="h-8 w-44 text-xs">
+          <SelectTrigger className="h-8 w-full sm:w-44 text-xs">
             <SelectValue placeholder="All chapters" />
           </SelectTrigger>
           <SelectContent>
@@ -373,7 +374,7 @@ export function CommunityNotesView() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleNotes.length === 0 && !searching ? (
             <div className="col-span-full flex min-h-[35vh] flex-col items-center justify-center gap-3 text-center">
-              <p className="text-3xl font-bold tracking-tight">
+              <p className="text-xl sm:text-3xl font-bold tracking-tight">
                 {isSearching ? "No notes found" : tab === "verified" ? "No Verified Notes Yet" : "No Notes Need Review"}
               </p>
               <p className="text-sm text-muted-foreground max-w-xs">

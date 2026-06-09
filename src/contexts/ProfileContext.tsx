@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { doc, onSnapshot, runTransaction, setDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction, setDoc } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import {
@@ -45,35 +45,35 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     setLoading(true);
+    let cancelled = false;
     const profileRef = doc(db, "users", uid, "profile", "data");
-    const unsubscribe = onSnapshot(
-      profileRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (isValidTargetYear(data.targetYear)) {
-            setProfile({
-              targetYear: data.targetYear,
-              dailyGoalMinutes: normalizeDailyGoalMinutes(data.dailyGoalMinutes),
-              dailyGoalChangedAt:
-                typeof data.dailyGoalChangedAt === "number" ? data.dailyGoalChangedAt : null,
-              mode: (data.mode === "professional" || data.mode === "jee") ? data.mode : "jee",
-            });
-          } else {
-            setProfile(null);
-          }
+
+    getDoc(profileRef).then((snapshot) => {
+      if (cancelled) return;
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (isValidTargetYear(data.targetYear)) {
+          setProfile({
+            targetYear: data.targetYear,
+            dailyGoalMinutes: normalizeDailyGoalMinutes(data.dailyGoalMinutes),
+            dailyGoalChangedAt:
+              typeof data.dailyGoalChangedAt === "number" ? data.dailyGoalChangedAt : null,
+            mode: (data.mode === "professional" || data.mode === "jee") ? data.mode : "jee",
+          });
         } else {
           setProfile(null);
         }
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error listening to profile:", err);
-        setLoading(false);
-      },
-    );
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    }).catch((err) => {
+      if (cancelled) return;
+      console.error("Error fetching profile:", err);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => { cancelled = true; };
   }, [uid]);
 
   const targetDate = useMemo(
@@ -98,22 +98,30 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     const goal = normalizeDailyGoalMinutes(dailyGoalMinutes);
     const profileRef = doc(db, "users", uid, "profile", "data");
+    const changedAt = Date.now();
     await setDoc(
       profileRef,
       {
         targetYear,
         dailyGoalMinutes: goal,
-        dailyGoalChangedAt: Date.now(),
+        dailyGoalChangedAt: changedAt,
         ...(mode ? { mode } : {}),
       },
       { merge: true },
     );
+    setProfile((prev) => ({
+      targetYear,
+      dailyGoalMinutes: goal,
+      dailyGoalChangedAt: changedAt,
+      mode: mode ?? prev?.mode ?? "jee",
+    }));
   };
 
   const saveTargetYear = async (year: JeeTargetYear) => {
     if (!uid) return;
     const profileRef = doc(db, "users", uid, "profile", "data");
     await setDoc(profileRef, { targetYear: year }, { merge: true });
+    setProfile((prev) => (prev ? { ...prev, targetYear: year } : prev));
   };
 
   const saveDailyGoalMinutes = async (minutes: number) => {
